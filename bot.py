@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8055170382:AAFaDLOQpYqwbbZTtKIiDd9ia5NWBNj6nnc")
-CHAT_ID = os.environ.get("CHAT_ID", "-1003887671671")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
 OWNER_ID = os.environ.get("OWNER_ID", "8842842151")
 PM_BOT = "https://t.me/Test_indicator01_bot"
 
