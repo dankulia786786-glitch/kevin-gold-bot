@@ -2,17 +2,18 @@ import os
 import asyncio
 import aiohttp
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import threading
 import json
 
 app = Flask(__name__)
+CORS(app)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHAT_ID   = os.environ.get("CHAT_ID", "")
 PM_BOT    = os.environ.get("PM_BOT", "https://t.me/Test_indicator01_bot")
 OWNER_ID  = os.environ.get("OWNER_ID", "8842842151")
 
-# Active trades per pair
 active_trades = {}
 
 PAIR_CONFIG = {
@@ -42,7 +43,7 @@ async def send_to_user(user_id, message):
         await session.post(url, json={"chat_id": user_id, "text": message, "parse_mode": "HTML"})
 
 def join_button():
-    return {"inline_keyboard": [[{"text": "👉 Join PM Now For Free", "url": PM_BOT}]]}
+    return {"inline_keyboard": [[{"text": "👉 JOIN PM NOW FOR FREE! 👈", "url": PM_BOT}]]}
 
 def run_async(coro):
     loop = asyncio.new_event_loop()
@@ -82,8 +83,11 @@ def telegram_update():
         print(f"Error: {e}")
     return jsonify({"ok": True})
 
-@app.route("/webhook", methods=["POST"])
+@app.route("/webhook", methods=["POST", "OPTIONS"])
 def webhook():
+    if request.method == "OPTIONS":
+        return jsonify({"ok": True}), 200
+
     global active_trades
     data = request.get_json()
     if not data:
@@ -93,15 +97,12 @@ def webhook():
     price  = float(data.get("price", 0))
     config = PAIR_CONFIG.get(pair, DEFAULT_CONFIG)
     er     = config["entry_range"]
+    event  = data.get("event", "").upper()
 
-    # ═══════════════════════════════════════════
-    # HANDLE TP/SL/BE EVENTS FROM PINE SCRIPT
-    # ═══════════════════════════════════════════
-    event = data.get("event", "").upper()
-
+    # ── TP1 ──────────────────────────────────────────────────
     if event == "TP1":
         threading.Thread(target=run_async, args=(send_telegram(
-            "GOLD SMASHED TP1 ✅✅✅\n\n"
+            "<b>🏅 GOLD SMASHED TP1 ✅✅✅</b>\n\n"
             "☑️ Close your positions now and secure your profits\n\n"
             "Or\n\n"
             "☑️ Move your SL to Break Even and let the trade run risk free",
@@ -109,9 +110,10 @@ def webhook():
         ),)).start()
         return jsonify({"status": "tp1_sent"}), 200
 
+    # ── TP2 ──────────────────────────────────────────────────
     if event == "TP2":
         threading.Thread(target=run_async, args=(send_telegram(
-            "GOLD SMASHED TP2 ✅✅✅✅\n\n"
+            "<b>🏅 GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
             "☑️ Close remaining positions and secure your profits\n\n"
             "Or\n\n"
             "☑️ Let the remaining trade run risk free to TP3",
@@ -119,35 +121,34 @@ def webhook():
         ),)).start()
         return jsonify({"status": "tp2_sent"}), 200
 
+    # ── TP3 ──────────────────────────────────────────────────
     if event == "TP3":
         threading.Thread(target=run_async, args=(send_telegram(
-            "🏆 GOLD SMASHED TP3 ✅✅✅✅✅\n\n"
+            "<b>🏆 GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
             "☑️ ALL TARGETS HIT!\n\n"
             "💰 Full profits secured.\n\n"
             "👏 Well done team!",
             reply_markup=join_button()
         ),)).start()
-        active_trades[pair] = None  # clear trade
+        active_trades[pair] = None
         return jsonify({"status": "tp3_sent"}), 200
 
+    # ── SL ───────────────────────────────────────────────────
     if event == "SL":
         threading.Thread(target=run_async, args=(send_telegram(
-            "🛑 SL HIT\n\n"
+            "<b>🛑 GOLD SL HIT</b>\n\n"
             "❌ Stop Loss has been reached\n\n"
             "☑️ Close your positions and wait for next signal"
         ),)).start()
-        active_trades[pair] = None  # clear trade
+        active_trades[pair] = None
         return jsonify({"status": "sl_sent"}), 200
 
+    # ── BREAK EVEN (silent) ───────────────────────────────────
     if event == "BE":
-        # Silent — no message to clients
-        # Bot just clears trade and is ready for next signal
         active_trades[pair] = None
         return jsonify({"status": "be_cleared"}), 200
 
-    # ═══════════════════════════════════════════
-    # HANDLE NEW ENTRY SIGNAL
-    # ═══════════════════════════════════════════
+    # ── NEW ENTRY SIGNAL ─────────────────────────────────────
     signal = data.get("signal", "").upper()
 
     if active_trades.get(pair) is not None:
@@ -176,7 +177,7 @@ def webhook():
 
     message = (
         f"{emoji} <b>{signal}</b>\n"
-        f"{config['name']}\n\n"
+        f"<b>{config['name']}</b>\n\n"
         f"ENTRY : {entry_low} – {entry_high}\n\n"
         f"✅ TP1 {tp1}\n"
         f"✅ TP2 {tp2}\n"
