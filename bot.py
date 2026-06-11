@@ -195,18 +195,14 @@ def handle_tp(pair, tp_num):
         send_message(text, reply_markup=pm_button())
 
 def handle_sl(pair):
-    config = PAIR_CONFIG.get(pair, PAIR_CONFIG["XAUUSD"])
-    label = config["name"].split("|")[1].strip()
-    text = (
-        f"🛑 <b>{label} SL HIT</b>\n\n"
-        f"❌ Stop Loss has been reached\n\n"
-        f"☑️ Close your positions and wait for next signal"
-    )
     active_trades.pop(pair, None)
+    text = (
+        f"<b>SL Triggered Team ❌</b>\n\n"
+        f"Looking for the next Set-Up. Lets win on the Next one!"
+    )
     send_message(text)
 
 def handle_breakeven(pair):
-    # Silent — just clear the trade
     active_trades.pop(pair, None)
     logger.info(f"Break even hit for {pair} — trade cleared silently")
 
@@ -221,7 +217,6 @@ def webhook():
         price = data.get("price", 0)
         pair = data.get("pair", "XAUUSD").upper()
 
-        # Also handle old signal format
         signal = data.get("signal", "").upper()
         if signal in ["BUY", "SELL"] and not event:
             event = "entry"
@@ -262,14 +257,12 @@ def telegram_update():
             text = message.get("text", "")
             chat_id = message.get("chat", {}).get("id")
 
-            # Auto reply to user
             if chat_id:
                 requests.post(f"{TELEGRAM_API}/sendMessage", json={
                     "chat_id": chat_id,
                     "text": "Hi! Kevin will message you shortly! 🏆"
                 }, timeout=10)
 
-            # Forward to Kevin
             send_to_owner(
                 f"📩 New PM request!\n\n"
                 f"Name: {name}\n"
