@@ -99,7 +99,7 @@ JOIN_BUTTON = {
 # ─── PRICE FETCHING — 3 sources each, fastest first ─────────────────────────
 
 def get_price_gold():
-    # 1. Twelve Data — real-time, fast, free tier
+    # 1. Twelve Data — real-time XAUUSD in USD
     try:
         td_key = os.environ.get("TWELVE_DATA_KEY", "")
         if td_key:
@@ -109,40 +109,36 @@ def get_price_gold():
             )
             if r.status_code == 200:
                 p = float(r.json().get("price", 0))
-                if p > 0:
-                    logger.debug(f"Gold via TwelveData: {p}")
+                if p > 3000:  # Sanity check — Gold must be above $3000
+                    logger.info(f"Gold via TwelveData: {p}")
                     return p
     except Exception:
         pass
 
-    # 2. Metals-API (metals.live) — free, no key needed
+    # 2. Frankfurter via Gold API — returns USD per troy oz
+    try:
+        r = requests.get(
+            "https://api.gold-api.com/price/XAU",
+            timeout=6
+        )
+        if r.status_code == 200:
+            p = float(r.json().get("price", 0))
+            if p > 3000:
+                logger.info(f"Gold via gold-api.com: {p}")
+                return p
+    except Exception:
+        pass
+
+    # 3. Metals.live — but validate it's USD (must be > 3000)
     try:
         r = requests.get("https://api.metals.live/v1/spot/gold", timeout=6)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and data:
                 p = float(data[0].get("gold", 0))
-                if p > 0:
-                    logger.debug(f"Gold via metals.live: {p}")
+                if p > 3000:  # Only accept if looks like USD price
+                    logger.info(f"Gold via metals.live: {p}")
                     return p
-    except Exception:
-        pass
-
-    # 3. Swissquote public feed — no key, real broker feed
-    try:
-        r = requests.get(
-            "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD",
-            timeout=6
-        )
-        if r.status_code == 200:
-            data = r.json()
-            if data:
-                bid = float(data[0].get("spreadProfilePrices", [{}])[0].get("bid", 0))
-                ask = float(data[0].get("spreadProfilePrices", [{}])[0].get("ask", 0))
-                mid = (bid + ask) / 2 if bid and ask else (bid or ask)
-                if mid > 0:
-                    logger.debug(f"Gold via Swissquote: {mid}")
-                    return mid
     except Exception:
         pass
 
