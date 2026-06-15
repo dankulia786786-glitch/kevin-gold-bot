@@ -16,7 +16,6 @@ CHAT_ID    = os.environ.get("CHAT_ID")
 CHAT_ID_2  = os.environ.get("CHAT_ID_2", "")
 OWNER_ID   = os.environ.get("OWNER_ID", "8842842151")
 
-# Triple state backup — all three written on every save
 STATE_FILES = [
     "/tmp/trade_state.json",
     "/tmp/trade_state_b1.json",
@@ -118,7 +117,6 @@ def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
     return None
 
 def send_message(text, reply_to_ids=None, keyboard=None):
-    """Send to all channels. reply_to_ids = {chat_id: message_id}"""
     channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
     msg_ids  = {}
     for ch in channels:
@@ -143,97 +141,64 @@ JOIN_BUTTON = {
     }]]
 }
 
-# ─── PRICE FETCHING — 3 sources each, fastest first ─────────────────────────
+# ─── PRICE FETCHING ──────────────────────────────────────────────────────────
 
 def get_price_gold():
-    # 1. Twelve Data — real-time XAUUSD in USD
     try:
         td_key = os.environ.get("TWELVE_DATA_KEY", "")
         if td_key:
-            r = requests.get(
-                f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={td_key}",
-                timeout=5
-            )
+            r = requests.get(f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={td_key}", timeout=5)
             if r.status_code == 200:
                 p = float(r.json().get("price", 0))
-                if p > 3000:  # Sanity check — Gold must be above $3000
-                    logger.info(f"Gold via TwelveData: {p}")
+                if p > 3000:
                     return p
     except Exception:
         pass
-
-    # 2. Frankfurter via Gold API — returns USD per troy oz
     try:
-        r = requests.get(
-            "https://api.gold-api.com/price/XAU",
-            timeout=6
-        )
+        r = requests.get("https://api.gold-api.com/price/XAU", timeout=6)
         if r.status_code == 200:
             p = float(r.json().get("price", 0))
             if p > 3000:
-                logger.info(f"Gold via gold-api.com: {p}")
                 return p
     except Exception:
         pass
-
-    # 3. Metals.live — but validate it's USD (must be > 3000)
     try:
         r = requests.get("https://api.metals.live/v1/spot/gold", timeout=6)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and data:
                 p = float(data[0].get("gold", 0))
-                if p > 3000:  # Only accept if looks like USD price
-                    logger.info(f"Gold via metals.live: {p}")
+                if p > 3000:
                     return p
     except Exception:
         pass
-
     return None
 
 def get_price_btc():
-    # 1. Binance — fastest, direct exchange
     try:
-        r = requests.get(
-            "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
-            timeout=5
-        )
+        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
         if r.status_code == 200:
             p = float(r.json()["price"])
             if p > 0:
-                logger.debug(f"BTC via Binance: {p}")
                 return p
     except Exception:
         pass
-
-    # 2. CoinGecko — reliable free API
     try:
-        r = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
-            timeout=6
-        )
+        r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", timeout=6)
         if r.status_code == 200:
             p = float(r.json()["bitcoin"]["usd"])
             if p > 0:
-                logger.debug(f"BTC via CoinGecko: {p}")
                 return p
     except Exception:
         pass
-
-    # 3. Coinbase — second exchange fallback
     try:
-        r = requests.get(
-            "https://api.coinbase.com/v2/prices/BTC-USD/spot",
-            timeout=6
-        )
+        r = requests.get("https://api.coinbase.com/v2/prices/BTC-USD/spot", timeout=6)
         if r.status_code == 200:
             p = float(r.json()["data"]["amount"])
             if p > 0:
-                logger.debug(f"BTC via Coinbase: {p}")
                 return p
     except Exception:
         pass
-
     return None
 
 def get_price(pair):
@@ -282,31 +247,20 @@ def send_sl_message(pair, signal_ids):
 def price_monitor():
     logger.info("Price monitor started — 30 second intervals")
     fail_counts = {"XAUUSD": 0, "BTCUSD": 0}
-
     while True:
         try:
             with state_lock:
                 snapshot = json.loads(json.dumps(active_trades))
-
             for pair, trade in snapshot.items():
                 if trade is None:
                     fail_counts[pair] = 0
                     continue
-
                 price = get_price(pair)
-
                 if price is None:
                     fail_counts[pair] += 1
-                    logger.warning(f"All price sources failed for {pair} — count: {fail_counts[pair]}")
-                    if fail_counts[pair] == 10:  # 5 minutes of failures
-                        notify_owner(
-                            f"⚠️ ALERT: Cannot fetch {pair} price for 5 minutes.\n"
-                            f"All 3 price sources are down.\n"
-                            f"Bot is running but cannot monitor TP/SL.\n"
-                            f"Check Railway logs."
-                        )
+                    if fail_counts[pair] == 10:
+                        notify_owner(f"⚠️ ALERT: Cannot fetch {pair} price for 5 minutes.")
                     continue
-
                 fail_counts[pair] = 0
                 direction    = trade["direction"]
                 tp_levels    = trade["tp_levels"]
@@ -314,9 +268,7 @@ def price_monitor():
                 be           = trade.get("be")
                 signal_ids   = trade.get("signal_msg_ids", {})
                 tp_hit_count = trade.get("tp_hit_count", 0)
-
                 hit_tp = hit_sl = hit_be = False
-
                 if direction == "BUY":
                     if tp_levels and price >= tp_levels[0]:
                         hit_tp = True
@@ -331,10 +283,8 @@ def price_monitor():
                         hit_sl = True
                     elif be is not None and price >= be and tp_hit_count > 0:
                         hit_be = True
-
                 if hit_tp:
                     tp_num = tp_hit_count + 1
-                    logger.info(f"✅ {pair} TP{tp_num} HIT @ {price}")
                     send_tp_message(pair, tp_num, signal_ids)
                     remaining = tp_levels[1:]
                     with state_lock:
@@ -346,23 +296,17 @@ def price_monitor():
                             if not remaining:
                                 active_trades[pair] = None
                             save_state(active_trades)
-
                 elif hit_sl:
-                    logger.info(f"❌ {pair} SL HIT @ {price}")
                     send_sl_message(pair, signal_ids)
                     with state_lock:
                         active_trades[pair] = None
                         save_state(active_trades)
-
                 elif hit_be:
-                    logger.info(f"↩️ {pair} BE HIT @ {price} — silent clear")
                     with state_lock:
                         active_trades[pair] = None
                         save_state(active_trades)
-
         except Exception as e:
             logger.error(f"Monitor error: {e}")
-
         time.sleep(30)
 
 # ─── WEBHOOK ─────────────────────────────────────────────────────────────────
@@ -384,13 +328,23 @@ def webhook():
                     return jsonify({"status": "ignored", "reason": "trade active"})
 
             if pair == "XAUUSD":
-                entry_low  = round(price - 2, 2)
-                entry_high = round(price, 2)
-                entry_mid  = price
-                tp1 = round(price + 2, 2)  if direction == "BUY" else round(price - 2, 2)
-                tp2 = round(price + 3, 2)  if direction == "BUY" else round(price - 3, 2)
-                tp3 = round(price + 10, 2) if direction == "BUY" else round(price - 10, 2)
-                sl  = round(price - 12, 2) if direction == "BUY" else round(price + 12, 2)
+                # BUY: entry low = price-2, entry high = price
+                # SELL: entry low = price, entry high = price+2
+                if direction == "BUY":
+                    entry_low  = round(price - 2, 2)
+                    entry_high = round(price, 2)
+                    tp1 = round(price + 2, 2)
+                    tp2 = round(price + 3, 2)
+                    tp3 = round(price + 10, 2)
+                    sl  = round(price - 12, 2)
+                else:
+                    entry_low  = round(price, 2)
+                    entry_high = round(price + 2, 2)
+                    tp1 = round(price - 2, 2)
+                    tp2 = round(price - 3, 2)
+                    tp3 = round(price - 10, 2)
+                    sl  = round(price + 12, 2)
+                entry_mid = price
                 tp_levels = [tp1, tp2, tp3]
                 emoji = "🟢" if direction == "BUY" else "🔴"
                 text = (
@@ -404,25 +358,29 @@ def webhook():
                     f"(Use Appropriate Lot Sizes)"
                 )
             else:
-                entry_low  = int(price - 150)
-                entry_high = int(price)
-                entry_mid  = price
-                tp1 = int(price + 100) if direction == "BUY" else int(price - 100)
-                sl  = int(price - 1000) if direction == "BUY" else int(price + 1000)
+                if direction == "BUY":
+                    entry_low  = int(price - 150)
+                    entry_high = int(price)
+                    tp1 = int(price + 100)
+                    sl  = int(price - 1000)
+                else:
+                    entry_low  = int(price)
+                    entry_high = int(price + 150)
+                    tp1 = int(price - 100)
+                    sl  = int(price + 1000)
+                entry_mid = price
                 tp_levels = [tp1]
                 emoji = "🟢" if direction == "BUY" else "🔴"
                 text = (
-                    f"{emoji} <b>{direction}</b>\n"
-                    f"<b>BTC/USD | BITCOIN</b>\n\n"
+                    f"{emoji} <b>{direction}\n"
+                    f"BTC/USD | BITCOIN</b>\n\n"
                     f"ENTRY : {entry_low:,} – {entry_high:,}\n\n"
                     f"✅ TP1 {tp1:,}\n"
-                    f"🛑 SL {sl:,}\n\n"
+                    f"🚫 SL {sl:,}\n\n"
                     f"(Use Appropriate Lot Sizes)"
                 )
 
             signal_ids = send_signal_with_chart(text, pair)
-            logger.info(f"Entry sent — msg_ids: {signal_ids}")
-
             with state_lock:
                 active_trades[pair] = {
                     "direction":      direction,
@@ -434,7 +392,6 @@ def webhook():
                     "signal_msg_ids": signal_ids
                 }
                 save_state(active_trades)
-
             return jsonify({"status": "ok", "signal_msg_ids": signal_ids})
 
         return jsonify({"status": "ok"})
@@ -456,12 +413,7 @@ def telegram_update():
         text     = message.get("text", "")
         name     = user.get("first_name", "Unknown")
         username = user.get("username", "no username")
-        notify_owner(
-            f"📩 New PM via bot:\n"
-            f"Name: {name}\n"
-            f"Username: @{username}\n"
-            f"Message: {text}"
-        )
+        notify_owner(f"📩 New PM via bot:\nName: {name}\nUsername: @{username}\nMessage: {text}")
     except Exception as e:
         logger.error(f"Telegram update error: {e}")
     return jsonify({"ok": True})
