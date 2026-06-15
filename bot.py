@@ -420,6 +420,14 @@ def telegram_update():
 
 # ─── HEALTH ──────────────────────────────────────────────────────────────────
 
+@app.route("/reset", methods=["GET"])
+def reset():
+    with state_lock:
+        active_trades["XAUUSD"] = None
+        active_trades["BTCUSD"] = None
+        save_state(active_trades)
+    return "All trades cleared! ✅ Bot ready for new signals."
+
 @app.route("/", methods=["GET"])
 def health():
     with state_lock:
