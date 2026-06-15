@@ -394,8 +394,8 @@ def webhook():
                 tp_levels = [tp1, tp2, tp3]
                 emoji = "🟢" if direction == "BUY" else "🔴"
                 text = (
-                    f"{emoji} <b>{direction}</b>\n"
-                    f"<b>XAU/USD | GOLD</b>\n\n"
+                    f"{emoji} <b>{direction}\n"
+                    f"XAU/USD | GOLD</b>\n\n"
                     f"ENTRY : {entry_low:.2f} – {entry_high:.2f}\n\n"
                     f"✅ TP1 {tp1:.2f}\n"
                     f"✅ TP2 {tp2:.2f}\n"
