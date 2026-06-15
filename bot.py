@@ -35,7 +35,7 @@ def get_chart_image(pair):
     try:
         symbol = "OANDA:XAUUSD" if pair == "XAUUSD" else "BITSTAMP:BTCUSD"
         url = (
-            f"https://api.chart-img.com/v2/tradingview/advanced-chart/storage"
+            f"https://api.chart-img.com/v1/tradingview/advanced-chart"
             f"?symbol={symbol}&interval=5m&theme=dark"
             f"&studies=RSI,Volume"
             f"&key={CHART_IMG_KEY}"
