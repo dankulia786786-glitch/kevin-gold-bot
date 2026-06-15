@@ -358,9 +358,9 @@ def webhook():
                 )
             else:
                 entry_low  = int(price - 150)
-                entry_high = int(price + 150)
+                entry_high = int(price)
                 entry_mid  = price
-                tp1 = int(price + 150) if direction == "BUY" else int(price - 150)
+                tp1 = int(price + 100) if direction == "BUY" else int(price - 100)
                 sl  = int(price - 1000) if direction == "BUY" else int(price + 1000)
                 tp_levels = [tp1]
                 emoji = "🟢" if direction == "BUY" else "🔴"
