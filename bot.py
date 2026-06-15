@@ -23,8 +23,51 @@ STATE_FILES = [
     "/tmp/trade_state_b2.json"
 ]
 
-TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-state_lock   = threading.Lock()
+TELEGRAM_URL   = f"https://api.telegram.org/bot{BOT_TOKEN}"
+CHART_IMG_KEY  = os.environ.get("CHART_IMG_KEY", "")
+state_lock     = threading.Lock()
+
+# ─── CHART IMAGE ─────────────────────────────────────────────────────────────
+
+def get_chart_image(pair):
+    if not CHART_IMG_KEY:
+        return None
+    try:
+        layout_id = "AmiSCKmA"
+        url = (
+            f"https://api.chart-img.com/v1/tradingview/layout-chart"
+            f"?layout={layout_id}&width=800&height=500"
+            f"&key={CHART_IMG_KEY}"
+        )
+        r = requests.get(url, timeout=10)
+        if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
+            return r.content
+        logger.warning(f"Chart image failed: {r.status_code}")
+    except Exception as e:
+        logger.error(f"Chart image error: {e}")
+    return None
+
+def send_photo_to_channel(chat_id, photo_bytes, caption):
+    try:
+        files = {"photo": ("chart.png", photo_bytes, "image/png")}
+        data  = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
+        r = requests.post(f"{TELEGRAM_URL}/sendPhoto", files=files, data=data, timeout=15)
+        result = r.json()
+        if result.get("ok"):
+            return result["result"]["message_id"]
+    except Exception as e:
+        logger.error(f"sendPhoto error: {e}")
+    return None
+
+def send_signal_with_chart(text, pair):
+    channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+    msg_ids  = {}
+    chart    = get_chart_image(pair)
+    for ch in channels:
+        mid = send_photo_to_channel(ch, chart, text) if chart else send_to_channel(ch, text)
+        if mid:
+            msg_ids[ch] = mid
+    return msg_ids
 
 # ─── STATE ───────────────────────────────────────────────────────────────────
 
@@ -373,7 +416,7 @@ def webhook():
                     f"(Use Appropriate Lot Sizes)"
                 )
 
-            signal_ids = send_message(text)
+            signal_ids = send_signal_with_chart(text, pair)
             logger.info(f"Entry sent — msg_ids: {signal_ids}")
 
             with state_lock:
