@@ -33,10 +33,11 @@ def get_chart_image(pair):
     if not CHART_IMG_KEY:
         return None
     try:
-        layout_id = "AmiSCKmA"
+        symbol = "OANDA:XAUUSD" if pair == "XAUUSD" else "BITSTAMP:BTCUSD"
         url = (
-            f"https://api.chart-img.com/v1/tradingview/layout-chart"
-            f"?layout={layout_id}&width=800&height=500"
+            f"https://api.chart-img.com/v2/tradingview/advanced-chart/storage"
+            f"?symbol={symbol}&interval=5m&theme=dark"
+            f"&studies=RSI,Volume"
             f"&key={CHART_IMG_KEY}"
         )
         r = requests.get(url, timeout=10)
