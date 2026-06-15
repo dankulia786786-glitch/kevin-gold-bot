@@ -65,7 +65,10 @@ def send_signal_with_chart(text, pair):
     msg_ids  = {}
     chart    = get_chart_image(pair)
     for ch in channels:
-        mid = send_photo_to_channel(ch, chart, text) if chart else send_to_channel(ch, text)
+        if chart:
+            mid = send_photo_to_channel(ch, chart, text)
+        else:
+            mid = send_to_channel(ch, text)
         if mid:
             msg_ids[ch] = mid
     return msg_ids
@@ -242,28 +245,28 @@ def send_tp_message(pair, tp_num, signal_ids):
     if pair == "XAUUSD":
         if tp_num == 1:
             text = (
-                "<b>🏅 GOLD SMASHED TP1 ✅✅✅</b>\n\n"
+                "<b>GOLD SMASHED TP1 ✅✅✅</b>\n\n"
                 "☑️ Close your positions now and secure your profits\n\n"
                 "Or\n\n"
                 "☑️ Move your SL to Break Even and let the trade run risk free"
             )
         elif tp_num == 2:
             text = (
-                "<b>🏅 GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
+                "<b>GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
                 "☑️ Close remaining positions and secure your profits\n\n"
                 "Or\n\n"
                 "☑️ Let the remaining trade run risk free to TP3"
             )
         else:
             text = (
-                "<b>🏆 GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
+                "<b>GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
                 "☑️ ALL TARGETS HIT!\n\n"
                 "💰 Full profits secured.\n\n"
                 "👏 Well done team!"
             )
     else:
         text = (
-            "<b>🏆 BITCOIN SMASHED TP1 ✅✅✅</b>\n\n"
+            "<b>BITCOIN SMASHED TP1 ✅✅✅</b>\n\n"
             "☑️ ALL TARGETS HIT!\n\n"
             "💰 Full profits secured.\n\n"
             "👏 Well done team!"
@@ -382,10 +385,10 @@ def webhook():
 
             if pair == "XAUUSD":
                 entry_low  = round(price - 2, 2)
-                entry_high = round(price + 2, 2)
+                entry_high = round(price, 2)
                 entry_mid  = price
-                tp1 = round(price + 4, 2)  if direction == "BUY" else round(price - 4, 2)
-                tp2 = round(price + 6, 2)  if direction == "BUY" else round(price - 6, 2)
+                tp1 = round(price + 2, 2)  if direction == "BUY" else round(price - 2, 2)
+                tp2 = round(price + 3, 2)  if direction == "BUY" else round(price - 3, 2)
                 tp3 = round(price + 10, 2) if direction == "BUY" else round(price - 10, 2)
                 sl  = round(price - 12, 2) if direction == "BUY" else round(price + 12, 2)
                 tp_levels = [tp1, tp2, tp3]
@@ -397,7 +400,7 @@ def webhook():
                     f"✅ TP1 {tp1:.2f}\n"
                     f"✅ TP2 {tp2:.2f}\n"
                     f"✅ TP3 {tp3:.2f}\n"
-                    f"🛑 SL {sl:.2f}\n\n"
+                    f"🚫 SL {sl:.2f}\n\n"
                     f"(Use Appropriate Lot Sizes)"
                 )
             else:
