@@ -92,7 +92,7 @@ def notify_owner(text):
 JOIN_BUTTON = {
     "inline_keyboard": [[{
         "text": "👉 JOIN PM NOW FOR FREE! 👈",
-        "url": "https://t.me/KevinGoldVIP_bot"
+        "url": "https://t.me/Test_indicator01_bot"
     }]]
 }
 
@@ -343,7 +343,7 @@ def webhook():
                 tp1 = round(price + 4, 2)  if direction == "BUY" else round(price - 4, 2)
                 tp2 = round(price + 6, 2)  if direction == "BUY" else round(price - 6, 2)
                 tp3 = round(price + 10, 2) if direction == "BUY" else round(price - 10, 2)
-                sl  = round(price - 8, 2)  if direction == "BUY" else round(price + 8, 2)
+                sl  = round(price - 12, 2) if direction == "BUY" else round(price + 12, 2)
                 tp_levels = [tp1, tp2, tp3]
                 emoji = "🟢" if direction == "BUY" else "🔴"
                 text = (
