@@ -150,7 +150,30 @@ def pick_daily_bg():
     return os.path.join(QUOTE_BG_DIR, QUOTE_BG_FILES[idx])
 
 
+FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+BUNDLED_BOLD_FONT = os.path.join(FONTS_DIR, "DejaVuSans-Bold.ttf")
+
+_font_warning_logged = False
+
+
 def find_font(bold=True, size=54):
+    """
+    Loads the bold font bundled in the repo's /fonts folder. This is
+    deliberate — Railway's container does NOT have system fonts like
+    DejaVu or Liberation installed by default. Relying on system font
+    paths silently fell back to PIL's tiny built-in default font on
+    Railway, which is why text looked fine in testing but came out
+    tiny in the real Telegram channel. Shipping the .ttf file directly
+    in the repo removes that dependency entirely.
+    """
+    global _font_warning_logged
+    try:
+        if os.path.exists(BUNDLED_BOLD_FONT):
+            return ImageFont.truetype(BUNDLED_BOLD_FONT, size)
+    except Exception as e:
+        logger.error(f"Bundled font failed to load: {e}")
+
+    # Fallback to system fonts only if the bundled one is somehow missing
     candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -161,6 +184,13 @@ def find_font(bold=True, size=54):
                 return ImageFont.truetype(path, size)
         except Exception:
             continue
+
+    if not _font_warning_logged:
+        logger.error(
+            "⚠️ NO BOLD FONT FOUND ANYWHERE — quote text will render tiny. "
+            "Check that fonts/DejaVuSans-Bold.ttf was uploaded to GitHub."
+        )
+        _font_warning_logged = True
     return ImageFont.load_default()
 
 
@@ -205,34 +235,34 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
     draw.rectangle([0, 0, W, 10], fill=(212, 175, 55))
 
     quote_upper = quote.upper()
-    font_size = 64
-    max_width_chars = 20
+    font_size = 80
+    max_width_chars = 16
     font_quote = find_font(bold=True, size=font_size)
     lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
 
     band_center = (band_top + band_bottom) // 2
     while True:
-        line_height = int(font_size * 1.25)
+        line_height = int(font_size * 1.2)
         total_h = len(lines) * line_height
-        if total_h < (band_bottom - band_top) - 40 or font_size <= 36:
+        if total_h < (band_bottom - band_top) - 20 or font_size <= 48:
             break
         font_size -= 4
         font_quote = find_font(bold=True, size=font_size)
         lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
 
-    line_height = int(font_size * 1.25)
+    line_height = int(font_size * 1.2)
     total_h = len(lines) * line_height
     y = band_center - total_h // 2
 
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font_quote)
         w = bbox[2] - bbox[0]
-        draw.text(((W - w) // 2 + 3, y + 3), line, font=font_quote, fill=(0, 0, 0))
+        draw.text(((W - w) // 2 + 4, y + 4), line, font=font_quote, fill=(0, 0, 0))
         draw.text(((W - w) // 2, y), line, font=font_quote, fill=(255, 255, 255))
         y += line_height
 
-    draw.line([(W // 2 - 70, y + 30), (W // 2 + 70, y + 30)], fill=(212, 175, 55), width=4)
-    font_author = find_font(bold=True, size=30)
+    draw.line([(W // 2 - 80, y + 35), (W // 2 + 80, y + 35)], fill=(212, 175, 55), width=5)
+    font_author = find_font(bold=True, size=36)
     author_text = author.upper()
     bbox = draw.textbbox((0, 0), author_text, font=font_author)
     w = bbox[2] - bbox[0]
