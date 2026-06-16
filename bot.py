@@ -8,7 +8,7 @@ import textwrap
 import datetime
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from flask import Flask, request, jsonify
 
 logging.basicConfig(level=logging.INFO)
@@ -131,8 +131,8 @@ def pick_daily_quote():
 
 def find_font(bold=True, size=54):
     candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ]
     for path in candidates:
         try:
@@ -142,35 +142,91 @@ def find_font(bold=True, size=54):
             continue
     return ImageFont.load_default()
 
+def _lerp_color(c1, c2, t):
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+def _make_gradient_bg(W, H, top_color, bottom_color):
+    img = Image.new("RGB", (W, H), top_color)
+    draw = ImageDraw.Draw(img)
+    for y in range(H):
+        t = y / H
+        draw.line([(0, y), (W, y)], fill=_lerp_color(top_color, bottom_color, t))
+    return img
+
+def _add_city_silhouette(img, color=(5, 5, 8)):
+    W, H = img.size
+    draw = ImageDraw.Draw(img)
+    rnd = random.Random(42)
+    x = 0
+    base_y = int(H * 0.78)
+    while x < W:
+        bw = rnd.randint(40, 90)
+        bh = rnd.randint(60, 260)
+        draw.rectangle([x, base_y - bh, x + bw, H], fill=color)
+        for wy in range(base_y - bh + 15, H - 15, 22):
+            for wx in range(x + 8, x + bw - 8, 16):
+                if rnd.random() > 0.4:
+                    draw.rectangle([wx, wy, wx + 6, wy + 10], fill=(212, 175, 55))
+        x += bw + rnd.randint(2, 8)
+    return img
+
+def _add_vignette(img):
+    W, H = img.size
+    vignette = Image.new("L", (W, H), 0)
+    vdraw = ImageDraw.Draw(vignette)
+    vdraw.ellipse([-W * 0.3, -H * 0.3, W * 1.3, H * 1.3], fill=255)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(120))
+    black = Image.new("RGB", (W, H), (0, 0, 0))
+    return Image.composite(img, black, vignette)
+
 def generate_quote_image(quote, author=QUOTE_AUTHOR):
     W, H = 1080, 1080
-    bg_color = (15, 17, 22)
-    img = Image.new("RGB", (W, H), bg_color)
+
+    img = _make_gradient_bg(W, H, (8, 10, 16), (24, 18, 14))
+    img = _add_city_silhouette(img)
+    img = _add_vignette(img)
+    img = img.filter(ImageFilter.GaussianBlur(0.6))
+
     draw = ImageDraw.Draw(img)
+    draw.rectangle([0, 0, W, 10], fill=(212, 175, 55))
 
-    font_quote  = find_font(bold=True,  size=54)
-    font_author = find_font(bold=False, size=30)
-    font_mark   = find_font(bold=True,  size=120)
+    quote_upper = quote.upper()
+    font_size = 64
+    max_width_chars = 20
+    font_quote = find_font(bold=True, size=font_size)
+    lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
 
-    draw.rectangle([0, 0, W, 8], fill=(212, 175, 55))
-    draw.text((80, 70), "\u201C", font=font_mark, fill=(212, 175, 55))
+    safe_bottom = int(H * 0.60)
+    while True:
+        line_height = int(font_size * 1.25)
+        total_h = len(lines) * line_height
+        top = (safe_bottom - total_h) // 2 - 20
+        if top > 60 and (top + total_h + 110) < safe_bottom + 40:
+            break
+        if font_size <= 36:
+            break
+        font_size -= 4
+        font_quote = find_font(bold=True, size=font_size)
+        lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
 
-    wrapped = textwrap.fill(quote, width=28)
-    lines = wrapped.split("\n")
-    total_h = len(lines) * 70
-    y = (H - total_h) // 2 - 40
+    line_height = int(font_size * 1.25)
+    total_h = len(lines) * line_height
+    y = max(70, (safe_bottom - total_h) // 2 - 20)
+
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font_quote)
         w = bbox[2] - bbox[0]
-        draw.text(((W - w) // 2, y), line, font=font_quote, fill=(245, 245, 245))
-        y += 70
+        draw.text(((W - w) // 2 + 3, y + 3), line, font=font_quote, fill=(0, 0, 0))
+        draw.text(((W - w) // 2, y), line, font=font_quote, fill=(255, 255, 255))
+        y += line_height
 
-    draw.line([(W // 2 - 60, y + 30), (W // 2 + 60, y + 30)], fill=(212, 175, 55), width=3)
+    draw.line([(W // 2 - 70, y + 30), (W // 2 + 70, y + 30)], fill=(212, 175, 55), width=4)
 
-    author_text = f"— {author}"
+    font_author = find_font(bold=True, size=30)
+    author_text = author.upper()
     bbox = draw.textbbox((0, 0), author_text, font=font_author)
     w = bbox[2] - bbox[0]
-    draw.text(((W - w) // 2, y + 55), author_text, font=font_author, fill=(180, 180, 180))
+    draw.text(((W - w) // 2, y + 55), author_text, font=font_author, fill=(212, 175, 55))
 
     buf = BytesIO()
     img.save(buf, format="PNG")
