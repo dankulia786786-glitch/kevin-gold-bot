@@ -730,15 +730,15 @@ def telegram_update():
     return jsonify({"ok": True})
 
 
-# Track recently sent close notifications to prevent duplicates
-mt5_close_recent = {}
+# Track which TP levels have already been sent per signal — permanent, not time-based
+mt5_close_sent = set()
 mt5_close_lock = threading.Lock()
 
 @app.route("/mt5_close", methods=["POST"])
 def mt5_close():
     """
-    Called by the MT5 EA the moment a position closes (TP or SL).
-    Deduplication prevents multiple messages when 3 positions all hit TP1.
+    Called by the MT5 EA when a position closes.
+    Only handles SL — TPs are handled by Railway price monitor (more reliable).
     """
     try:
         data       = request.get_json(force=True)
@@ -750,58 +750,21 @@ def mt5_close():
 
         logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
 
-        # Deduplicate — ignore same pair+close_type within 60 seconds
-        dedup_key = f"{pair}_{close_type}"
-        now = time.time()
-        with mt5_close_lock:
-            last_sent = mt5_close_recent.get(dedup_key, 0)
-            if now - last_sent < 60:
-                logger.info(f"Duplicate {close_type} ignored for {pair} — sent {now - last_sent:.1f}s ago")
-                return jsonify({"status": "duplicate_ignored"})
-            mt5_close_recent[dedup_key] = now
+        # Only handle SL from MT5 — TPs handled by Railway price monitor
+        if close_type != "SL":
+            logger.info(f"Ignoring {close_type} from MT5 — handled by price monitor")
+            return jsonify({"status": "ignored"})
 
-        if close_type == "TP1":
-            if pair == "XAUUSD":
-                text = (
-                    "<b>GOLD SMASHED TP1 ✅✅✅</b>\n\n"
-                    "☑️ Close your positions now and secure your profits\n\n"
-                    "Or\n\n"
-                    "☑️ Move your SL to Break Even and let the trade run risk free"
-                )
-            else:
-                text = (
-                    "<b>BITCOIN SMASHED TP1 ✅✅✅</b>\n\n"
-                    "☑️ ALL TARGETS HIT!\n\n"
-                    "💰 Full profits secured.\n\n"
-                    "👏 Well done team!"
-                )
-        elif close_type == "TP2":
-            text = (
-                "<b>GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
-                "☑️ Close remaining positions and secure your profits\n\n"
-                "Or\n\n"
-                "☑️ Let the remaining trade run risk free to TP3"
-            )
-        elif close_type == "TP3":
-            text = (
-                "<b>GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
-                "☑️ ALL TARGETS HIT!\n\n"
-                "💰 Full profits secured.\n\n"
-                "👏 Well done team!"
-            )
-        else:  # SL
-            text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
+        # SL — use MT5 for instant accurate detection
+        text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
 
         with state_lock:
             trade_state = active_trades.get(pair)
             signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
-            if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
-                active_trades[pair] = None
-                save_state(active_trades)
+            active_trades[pair] = None
+            save_state(active_trades)
 
-        keyboard = JOIN_BUTTON if close_type != "SL" else None
-        send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
-
+        send_message(text, reply_to_ids=signal_ids)
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error(f"mt5_close error: {e}")
