@@ -3,7 +3,12 @@ import json
 import logging
 import threading
 import time
+import random
+import textwrap
+import datetime
 import requests
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 from flask import Flask, request, jsonify
 
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +30,180 @@ STATE_FILES = [
 TELEGRAM_URL   = f"https://api.telegram.org/bot{BOT_TOKEN}"
 CHART_IMG_KEY  = os.environ.get("CHART_IMG_KEY", "")
 state_lock     = threading.Lock()
+
+# ─── DAILY MOTIVATIONAL QUOTE ────────────────────────────────────────────────
+
+QUOTE_AUTHOR = "Kevin Burns & Team"
+QUOTE_STATE_FILE = "/tmp/quote_state.json"
+
+MOTIVATIONAL_QUOTES = [
+    "Discipline is choosing between what you want now and what you want most.",
+    "The market rewards patience, not impulse.",
+    "Every trade is a lesson. Every loss is tuition.",
+    "Build the second income today so tomorrow has options.",
+    "Wealth is built in silence, not in noise.",
+    "Consistency beats intensity every single time.",
+    "Your future self is watching the decisions you make right now.",
+    "Money loves speed but rewards patience.",
+    "Stack small wins. They become big ones.",
+    "The pain of discipline weighs ounces. The pain of regret weighs tons.",
+    "Income you build once can pay you forever.",
+    "Working hard for money is good. Making money work for you is freedom.",
+    "Nobody is coming to save your finances but you.",
+    "Every pound saved is a soldier you send into the future.",
+    "Risk comes from not knowing what you're doing.",
+    "Slow money is still money. Quitting is zero money.",
+    "A second income is just a decision you haven't made yet.",
+    "Average plans produce average results. Be deliberate.",
+    "The market doesn't care about your feelings, only your process.",
+    "Financial freedom is built one disciplined decision at a time.",
+    "Hard work in silence, success will make the noise.",
+    "You don't need more time, you need more focus.",
+    "Investing is the closest thing to a time machine for your money.",
+    "Comfort today, struggle tomorrow. Struggle today, comfort tomorrow.",
+    "The best investment you can make is in your own discipline.",
+    "Patience is the edge most traders give up too early.",
+    "Small steady habits beat one big lucky win.",
+    "You are one good habit away from a different year.",
+    "What you repeat, you become.",
+    "The goal isn't more money. It's more options.",
+    "A second stream of income is a second chance at freedom.",
+    "Trade the plan, not the emotion.",
+    "Every morning is a fresh account with zero losses yet.",
+    "If it was easy, everyone would already be financially free.",
+    "Plant the seed today even if the shade comes years later.",
+    "Money grows where attention and discipline meet.",
+    "Your network and your net worth grow the same way: consistently.",
+    "Skipping today's effort is borrowing from tomorrow's results.",
+    "Be the person your future bank account is proud of.",
+    "The market punishes impatience and rewards process.",
+    "You don't find time for wealth, you make time for it.",
+    "One percent better every day compounds into everything.",
+    "Quiet consistency outperforms loud motivation.",
+    "Every skill you build today is income you haven't collected yet.",
+    "The hardest part of investing is doing nothing when it's working.",
+    "Build it boring, build it steady, build it to last.",
+    "A second income isn't extra, it's insurance.",
+    "Confidence in trading comes from preparation, not luck.",
+    "You're not behind, you're early if you start today.",
+    "Wealth whispers, it never shouts.",
+    "Discipline today buys options tomorrow.",
+    "Every successful trader was once a beginner who refused to quit.",
+    "The work you avoid is usually the work that pays the most.",
+    "Most people overestimate today and underestimate this year.",
+    "Money management is just self management with numbers.",
+    "You can't control the market, only your reaction to it.",
+    "Show up on the boring days, that's where the real gains live.",
+    "Every habit is a vote for the person you're becoming.",
+    "Building wealth is a marathon disguised as a thousand short sprints.",
+    "Your bank balance is a reflection of your daily decisions.",
+    "Start where you are. Use what you have. Do what you can.",
+]
+
+def get_quote_state():
+    try:
+        if os.path.exists(QUOTE_STATE_FILE):
+            with open(QUOTE_STATE_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"used_indices": [], "last_sent_date": None}
+
+def save_quote_state(state):
+    try:
+        with open(QUOTE_STATE_FILE, "w") as f:
+            json.dump(state, f)
+    except Exception as e:
+        logger.error(f"Quote state save failed: {e}")
+
+def pick_daily_quote():
+    state = get_quote_state()
+    used = state.get("used_indices", [])
+    available = [i for i in range(len(MOTIVATIONAL_QUOTES)) if i not in used]
+    if not available:
+        used = []
+        available = list(range(len(MOTIVATIONAL_QUOTES)))
+    idx = random.choice(available)
+    used.append(idx)
+    state["used_indices"] = used
+    save_quote_state(state)
+    return MOTIVATIONAL_QUOTES[idx]
+
+def find_font(bold=True, size=54):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for path in candidates:
+        try:
+            if os.path.exists(path):
+                return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+def generate_quote_image(quote, author=QUOTE_AUTHOR):
+    W, H = 1080, 1080
+    bg_color = (15, 17, 22)
+    img = Image.new("RGB", (W, H), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    font_quote  = find_font(bold=True,  size=54)
+    font_author = find_font(bold=False, size=30)
+    font_mark   = find_font(bold=True,  size=120)
+
+    draw.rectangle([0, 0, W, 8], fill=(212, 175, 55))
+    draw.text((80, 70), "\u201C", font=font_mark, fill=(212, 175, 55))
+
+    wrapped = textwrap.fill(quote, width=28)
+    lines = wrapped.split("\n")
+    total_h = len(lines) * 70
+    y = (H - total_h) // 2 - 40
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font_quote)
+        w = bbox[2] - bbox[0]
+        draw.text(((W - w) // 2, y), line, font=font_quote, fill=(245, 245, 245))
+        y += 70
+
+    draw.line([(W // 2 - 60, y + 30), (W // 2 + 60, y + 30)], fill=(212, 175, 55), width=3)
+
+    author_text = f"— {author}"
+    bbox = draw.textbbox((0, 0), author_text, font=font_author)
+    w = bbox[2] - bbox[0]
+    draw.text(((W - w) // 2, y + 55), author_text, font=font_author, fill=(180, 180, 180))
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.read()
+
+def send_daily_quote():
+    try:
+        quote = pick_daily_quote()
+        image_bytes = generate_quote_image(quote)
+        channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+        for ch in channels:
+            send_photo_to_channel(ch, image_bytes, "")
+        logger.info(f"Daily quote sent: {quote[:40]}...")
+    except Exception as e:
+        logger.error(f"Daily quote error: {e}")
+
+def quote_scheduler():
+    logger.info("Quote scheduler started — checking every 60s for 08:00 UK time")
+    while True:
+        try:
+            now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # UK is UTC+1 in summer
+            today_str = now.strftime("%Y-%m-%d")
+            if now.hour == 8 and now.minute == 0:
+                state = get_quote_state()
+                if state.get("last_sent_date") != today_str:
+                    send_daily_quote()
+                    state = get_quote_state()
+                    state["last_sent_date"] = today_str
+                    save_quote_state(state)
+        except Exception as e:
+            logger.error(f"Quote scheduler error: {e}")
+        time.sleep(30)
 
 # ─── CHART IMAGE ─────────────────────────────────────────────────────────────
 
@@ -435,6 +614,11 @@ def reset():
         save_state(active_trades)
     return "All trades cleared! ✅ Bot ready for new signals."
 
+@app.route("/test_quote", methods=["GET"])
+def test_quote():
+    send_daily_quote()
+    return "Test quote sent! ✅ Check your channels."
+
 @app.route("/", methods=["GET"])
 def health():
     with state_lock:
@@ -454,5 +638,6 @@ def health():
 
 if __name__ == "__main__":
     threading.Thread(target=price_monitor, daemon=True).start()
+    threading.Thread(target=quote_scheduler, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
