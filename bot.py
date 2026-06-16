@@ -280,8 +280,9 @@ def send_daily_quote():
         bg_path = pick_daily_bg()
         image_bytes = generate_quote_image(quote, bg_path=bg_path)
         channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+        caption = "🔔 <b>Unmute &amp; Pin this channel to never miss a signal!</b>"
         for ch in channels:
-            send_photo_to_channel(ch, image_bytes, "")
+            send_photo_to_channel(ch, image_bytes, caption)
         logger.info(f"Daily quote sent: {quote[:40]}... | bg={os.path.basename(bg_path)}")
     except Exception as e:
         logger.error(f"Daily quote error: {e}")
