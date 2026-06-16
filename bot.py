@@ -730,11 +730,15 @@ def telegram_update():
     return jsonify({"ok": True})
 
 
+# Track recently sent close notifications to prevent duplicates
+mt5_close_recent = {}
+mt5_close_lock = threading.Lock()
+
 @app.route("/mt5_close", methods=["POST"])
 def mt5_close():
     """
     Called by the MT5 EA the moment a position closes (TP or SL).
-    MT5 is connected to the real broker feed so this is instant and accurate.
+    Deduplication prevents multiple messages when 3 positions all hit TP1.
     """
     try:
         data       = request.get_json(force=True)
@@ -745,6 +749,16 @@ def mt5_close():
         comment    = data.get("comment", "")
 
         logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
+
+        # Deduplicate — ignore same pair+close_type within 60 seconds
+        dedup_key = f"{pair}_{close_type}"
+        now = time.time()
+        with mt5_close_lock:
+            last_sent = mt5_close_recent.get(dedup_key, 0)
+            if now - last_sent < 60:
+                logger.info(f"Duplicate {close_type} ignored for {pair} — sent {now - last_sent:.1f}s ago")
+                return jsonify({"status": "duplicate_ignored"})
+            mt5_close_recent[dedup_key] = now
 
         if close_type == "TP1":
             if pair == "XAUUSD":
@@ -778,12 +792,9 @@ def mt5_close():
         else:  # SL
             text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
 
-        # Find signal message IDs to reply to (threaded message)
         with state_lock:
             trade_state = active_trades.get(pair)
             signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
-
-            # Clear trade state when SL or final TP hits
             if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
                 active_trades[pair] = None
                 save_state(active_trades)
