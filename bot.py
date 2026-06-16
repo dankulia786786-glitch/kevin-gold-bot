@@ -13,7 +13,6 @@ from flask import Flask, request, jsonify
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 app = Flask(__name__)
 
 BOT_TOKEN  = os.environ.get("BOT_TOKEN")
@@ -32,9 +31,13 @@ CHART_IMG_KEY  = os.environ.get("CHART_IMG_KEY", "")
 state_lock     = threading.Lock()
 
 # ─── DAILY MOTIVATIONAL QUOTE ────────────────────────────────────────────────
-
 QUOTE_AUTHOR = "Kevin Burns & Team"
 QUOTE_STATE_FILE = "/tmp/quote_state.json"
+
+# Background images live in this folder next to bot.py on GitHub.
+# bg_01.jpg ... bg_10.jpg — Kevin's own lifestyle photos.
+QUOTE_BG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quote_bg")
+QUOTE_BG_FILES = [f"bg_{i:02d}.jpg" for i in range(1, 11)]
 
 MOTIVATIONAL_QUOTES = [
     "Discipline is choosing between what you want now and what you want most.",
@@ -100,6 +103,7 @@ MOTIVATIONAL_QUOTES = [
     "Start where you are. Use what you have. Do what you can.",
 ]
 
+
 def get_quote_state():
     try:
         if os.path.exists(QUOTE_STATE_FILE):
@@ -107,7 +111,8 @@ def get_quote_state():
                 return json.load(f)
     except Exception:
         pass
-    return {"used_indices": [], "last_sent_date": None}
+    return {"used_quote_indices": [], "used_bg_indices": [], "last_sent_date": None}
+
 
 def save_quote_state(state):
     try:
@@ -116,18 +121,34 @@ def save_quote_state(state):
     except Exception as e:
         logger.error(f"Quote state save failed: {e}")
 
+
 def pick_daily_quote():
     state = get_quote_state()
-    used = state.get("used_indices", [])
+    used = state.get("used_quote_indices", [])
     available = [i for i in range(len(MOTIVATIONAL_QUOTES)) if i not in used]
     if not available:
         used = []
         available = list(range(len(MOTIVATIONAL_QUOTES)))
     idx = random.choice(available)
     used.append(idx)
-    state["used_indices"] = used
+    state["used_quote_indices"] = used
     save_quote_state(state)
     return MOTIVATIONAL_QUOTES[idx]
+
+
+def pick_daily_bg():
+    state = get_quote_state()
+    used = state.get("used_bg_indices", [])
+    available = [i for i in range(len(QUOTE_BG_FILES)) if i not in used]
+    if not available:
+        used = []
+        available = list(range(len(QUOTE_BG_FILES)))
+    idx = random.choice(available)
+    used.append(idx)
+    state["used_bg_indices"] = used
+    save_quote_state(state)
+    return os.path.join(QUOTE_BG_DIR, QUOTE_BG_FILES[idx])
+
 
 def find_font(bold=True, size=54):
     candidates = [
@@ -142,50 +163,43 @@ def find_font(bold=True, size=54):
             continue
     return ImageFont.load_default()
 
-def _lerp_color(c1, c2, t):
-    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
 
-def _make_gradient_bg(W, H, top_color, bottom_color):
-    img = Image.new("RGB", (W, H), top_color)
-    draw = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        draw.line([(0, y), (W, y)], fill=_lerp_color(top_color, bottom_color, t))
-    return img
+def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
+    """
+    Overlays a bold quote + author name on top of one of Kevin's own
+    lifestyle photos (bg_01.jpg ... bg_10.jpg). A dark gradient band is
+    drawn behind the text zone so it stays readable regardless of how
+    light, dark, or busy the underlying photo is.
+    """
+    if bg_path is None or not os.path.exists(bg_path):
+        # Fallback so the bot never crashes even if a file is missing
+        W, H = 1080, 1080
+        img = Image.new("RGB", (W, H), (15, 15, 18))
+    else:
+        img = Image.open(bg_path).convert("RGB")
+        W, H = img.size
 
-def _add_city_silhouette(img, color=(5, 5, 8)):
-    W, H = img.size
-    draw = ImageDraw.Draw(img)
-    rnd = random.Random(42)
-    x = 0
-    base_y = int(H * 0.78)
-    while x < W:
-        bw = rnd.randint(40, 90)
-        bh = rnd.randint(60, 260)
-        draw.rectangle([x, base_y - bh, x + bw, H], fill=color)
-        for wy in range(base_y - bh + 15, H - 15, 22):
-            for wx in range(x + 8, x + bw - 8, 16):
-                if rnd.random() > 0.4:
-                    draw.rectangle([wx, wy, wx + 6, wy + 10], fill=(212, 175, 55))
-        x += bw + rnd.randint(2, 8)
-    return img
+    # Slightly darken the whole photo so white text always has contrast
+    overlay_dark = Image.new("RGB", (W, H), (0, 0, 0))
+    img = Image.blend(img, overlay_dark, 0.18)
 
-def _add_vignette(img):
-    W, H = img.size
-    vignette = Image.new("L", (W, H), 0)
-    vdraw = ImageDraw.Draw(vignette)
-    vdraw.ellipse([-W * 0.3, -H * 0.3, W * 1.3, H * 1.3], fill=255)
-    vignette = vignette.filter(ImageFilter.GaussianBlur(120))
+    # Dark gradient band behind the text zone (middle third of the image)
+    band = Image.new("L", (W, H), 0)
+    bdraw = ImageDraw.Draw(band)
+    band_top = int(H * 0.30)
+    band_bottom = int(H * 0.62)
+    fade = int(H * 0.08)
+    for y in range(max(0, band_top - fade), min(H, band_bottom + fade)):
+        if y < band_top:
+            alpha = int(190 * ((y - (band_top - fade)) / fade)) if fade else 190
+        elif y > band_bottom:
+            alpha = int(190 * (1 - (y - band_bottom) / fade)) if fade else 190
+        else:
+            alpha = 190
+        alpha = max(0, min(190, alpha))
+        bdraw.line([(0, y), (W, y)], fill=alpha)
     black = Image.new("RGB", (W, H), (0, 0, 0))
-    return Image.composite(img, black, vignette)
-
-def generate_quote_image(quote, author=QUOTE_AUTHOR):
-    W, H = 1080, 1080
-
-    img = _make_gradient_bg(W, H, (8, 10, 16), (24, 18, 14))
-    img = _add_city_silhouette(img)
-    img = _add_vignette(img)
-    img = img.filter(ImageFilter.GaussianBlur(0.6))
+    img = Image.composite(black, img, band)
 
     draw = ImageDraw.Draw(img)
     draw.rectangle([0, 0, W, 10], fill=(212, 175, 55))
@@ -196,14 +210,11 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR):
     font_quote = find_font(bold=True, size=font_size)
     lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
 
-    safe_bottom = int(H * 0.60)
+    band_center = (band_top + band_bottom) // 2
     while True:
         line_height = int(font_size * 1.25)
         total_h = len(lines) * line_height
-        top = (safe_bottom - total_h) // 2 - 20
-        if top > 60 and (top + total_h + 110) < safe_bottom + 40:
-            break
-        if font_size <= 36:
+        if total_h < (band_bottom - band_top) - 40 or font_size <= 36:
             break
         font_size -= 4
         font_quote = find_font(bold=True, size=font_size)
@@ -211,7 +222,7 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR):
 
     line_height = int(font_size * 1.25)
     total_h = len(lines) * line_height
-    y = max(70, (safe_bottom - total_h) // 2 - 20)
+    y = band_center - total_h // 2
 
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font_quote)
@@ -221,7 +232,6 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR):
         y += line_height
 
     draw.line([(W // 2 - 70, y + 30), (W // 2 + 70, y + 30)], fill=(212, 175, 55), width=4)
-
     font_author = find_font(bold=True, size=30)
     author_text = author.upper()
     bbox = draw.textbbox((0, 0), author_text, font=font_author)
@@ -229,26 +239,29 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR):
     draw.text(((W - w) // 2, y + 55), author_text, font=font_author, fill=(212, 175, 55))
 
     buf = BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format="JPEG", quality=90)
     buf.seek(0)
     return buf.read()
+
 
 def send_daily_quote():
     try:
         quote = pick_daily_quote()
-        image_bytes = generate_quote_image(quote)
+        bg_path = pick_daily_bg()
+        image_bytes = generate_quote_image(quote, bg_path=bg_path)
         channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
         for ch in channels:
             send_photo_to_channel(ch, image_bytes, "")
-        logger.info(f"Daily quote sent: {quote[:40]}...")
+        logger.info(f"Daily quote sent: {quote[:40]}... | bg={os.path.basename(bg_path)}")
     except Exception as e:
         logger.error(f"Daily quote error: {e}")
 
+
 def quote_scheduler():
-    logger.info("Quote scheduler started — checking every 60s for 08:00 UK time")
+    logger.info("Quote scheduler started — checking every 30s for 08:00 UK time")
     while True:
         try:
-            now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # UK is UTC+1 in summer
+            now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # UK summer time (UTC+1)
             today_str = now.strftime("%Y-%m-%d")
             if now.hour == 8 and now.minute == 0:
                 state = get_quote_state()
@@ -261,8 +274,8 @@ def quote_scheduler():
             logger.error(f"Quote scheduler error: {e}")
         time.sleep(30)
 
-# ─── CHART IMAGE ─────────────────────────────────────────────────────────────
 
+# ─── CHART IMAGE ─────────────────────────────────────────────────────────────
 def get_chart_image(pair):
     if not CHART_IMG_KEY:
         return None
@@ -282,6 +295,7 @@ def get_chart_image(pair):
         logger.error(f"Chart image error: {e}")
     return None
 
+
 def send_photo_to_channel(chat_id, photo_bytes, caption):
     try:
         files = {"photo": ("chart.png", photo_bytes, "image/png")}
@@ -290,9 +304,11 @@ def send_photo_to_channel(chat_id, photo_bytes, caption):
         result = r.json()
         if result.get("ok"):
             return result["result"]["message_id"]
+        logger.error(f"sendPhoto rejected: {result}")
     except Exception as e:
         logger.error(f"sendPhoto error: {e}")
     return None
+
 
 def send_signal_with_chart(text, pair):
     channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
@@ -307,8 +323,8 @@ def send_signal_with_chart(text, pair):
             msg_ids[ch] = mid
     return msg_ids
 
-# ─── STATE ───────────────────────────────────────────────────────────────────
 
+# ─── STATE ───────────────────────────────────────────────────────────────────
 def load_state():
     for path in STATE_FILES:
         try:
@@ -322,6 +338,7 @@ def load_state():
             logger.warning(f"State load failed {path}: {e}")
     return {"XAUUSD": None, "BTCUSD": None}
 
+
 def save_state(state):
     payload = json.dumps(state)
     for path in STATE_FILES:
@@ -331,11 +348,12 @@ def save_state(state):
         except Exception as e:
             logger.error(f"State save failed {path}: {e}")
 
+
 active_trades = load_state()
 last_entry_time = {}
 
-# ─── TELEGRAM ────────────────────────────────────────────────────────────────
 
+# ─── TELEGRAM ────────────────────────────────────────────────────────────────
 def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_to:
@@ -352,6 +370,7 @@ def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
         logger.error(f"Send error to {chat_id}: {e}")
     return None
 
+
 def send_message(text, reply_to_ids=None, keyboard=None):
     channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
     msg_ids  = {}
@@ -362,6 +381,7 @@ def send_message(text, reply_to_ids=None, keyboard=None):
             msg_ids[ch] = mid
     return msg_ids
 
+
 def notify_owner(text):
     try:
         requests.post(f"{TELEGRAM_URL}/sendMessage", json={
@@ -370,6 +390,7 @@ def notify_owner(text):
     except Exception as e:
         logger.error(f"Owner notify error: {e}")
 
+
 JOIN_BUTTON = {
     "inline_keyboard": [[{
         "text": "👉 JOIN PM NOW FOR FREE! 👈",
@@ -377,8 +398,8 @@ JOIN_BUTTON = {
     }]]
 }
 
-# ─── PRICE FETCHING ──────────────────────────────────────────────────────────
 
+# ─── PRICE FETCHING ──────────────────────────────────────────────────────────
 def get_price_gold():
     try:
         td_key = os.environ.get("TWELVE_DATA_KEY", "")
@@ -410,6 +431,7 @@ def get_price_gold():
         pass
     return None
 
+
 def get_price_btc():
     try:
         r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
@@ -437,11 +459,12 @@ def get_price_btc():
         pass
     return None
 
+
 def get_price(pair):
     return get_price_gold() if pair == "XAUUSD" else get_price_btc()
 
-# ─── TP / SL MESSAGES ────────────────────────────────────────────────────────
 
+# ─── TP / SL MESSAGES ────────────────────────────────────────────────────────
 def send_tp_message(pair, tp_num, signal_ids):
     if pair == "XAUUSD":
         if tp_num == 1:
@@ -474,12 +497,13 @@ def send_tp_message(pair, tp_num, signal_ids):
         )
     send_message(text, reply_to_ids=signal_ids, keyboard=JOIN_BUTTON)
 
+
 def send_sl_message(pair, signal_ids):
     text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
     send_message(text, reply_to_ids=signal_ids)
 
-# ─── PRICE MONITOR ───────────────────────────────────────────────────────────
 
+# ─── PRICE MONITOR ───────────────────────────────────────────────────────────
 def price_monitor():
     logger.info("Price monitor started — 30 second intervals")
     fail_counts = {"XAUUSD": 0, "BTCUSD": 0}
@@ -504,6 +528,7 @@ def price_monitor():
                 be           = trade.get("be")
                 signal_ids   = trade.get("signal_msg_ids", {})
                 tp_hit_count = trade.get("tp_hit_count", 0)
+
                 hit_tp = hit_sl = hit_be = False
                 if direction == "BUY":
                     if tp_levels and price >= tp_levels[0]:
@@ -519,6 +544,7 @@ def price_monitor():
                         hit_sl = True
                     elif be is not None and price >= be and tp_hit_count > 0:
                         hit_be = True
+
                 if hit_tp:
                     tp_num = tp_hit_count + 1
                     send_tp_message(pair, tp_num, signal_ids)
@@ -545,8 +571,8 @@ def price_monitor():
             logger.error(f"Monitor error: {e}")
         time.sleep(30)
 
-# ─── WEBHOOK ─────────────────────────────────────────────────────────────────
 
+# ─── WEBHOOK ─────────────────────────────────────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -555,7 +581,6 @@ def webhook():
         pair      = data.get("pair", "XAUUSD")
         direction = data.get("direction", "BUY").upper()
         price     = float(str(data.get("price", "0")).replace(",", ""))
-
         logger.info(f"Webhook: {event} | {pair} | {direction} | {price}")
 
         if event == "entry":
@@ -570,8 +595,6 @@ def webhook():
                 last_entry_time[pair] = now
 
             if pair == "XAUUSD":
-                # BUY: entry low = price-2, entry high = price
-                # SELL: entry low = price, entry high = price+2
                 if direction == "BUY":
                     entry_low  = round(price - 2, 2)
                     entry_high = round(price, 2)
@@ -637,13 +660,12 @@ def webhook():
             return jsonify({"status": "ok", "signal_msg_ids": signal_ids})
 
         return jsonify({"status": "ok"})
-
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ─── TELEGRAM UPDATES ────────────────────────────────────────────────────────
 
+# ─── TELEGRAM UPDATES ────────────────────────────────────────────────────────
 @app.route("/telegram_update", methods=["POST"])
 def telegram_update():
     try:
@@ -660,8 +682,8 @@ def telegram_update():
         logger.error(f"Telegram update error: {e}")
     return jsonify({"ok": True})
 
-# ─── HEALTH ──────────────────────────────────────────────────────────────────
 
+# ─── HEALTH ──────────────────────────────────────────────────────────────────
 @app.route("/reset", methods=["GET"])
 def reset():
     with state_lock:
@@ -670,10 +692,15 @@ def reset():
         save_state(active_trades)
     return "All trades cleared! ✅ Bot ready for new signals."
 
+
 @app.route("/test_quote", methods=["GET"])
 def test_quote():
+    missing = [f for f in QUOTE_BG_FILES if not os.path.exists(os.path.join(QUOTE_BG_DIR, f))]
     send_daily_quote()
+    if missing:
+        return f"Test quote sent, but missing background files: {missing}. Check quote_bg folder on GitHub."
     return "Test quote sent! ✅ Check your channels."
+
 
 @app.route("/", methods=["GET"])
 def health():
@@ -681,17 +708,19 @@ def health():
         gold = active_trades.get("XAUUSD")
         btc  = active_trades.get("BTCUSD")
     ch2_info = f" | Channel 2: {CHAT_ID_2}" if CHAT_ID_2 else " | Channel 2: not set"
+    bg_found = sum(1 for f in QUOTE_BG_FILES if os.path.exists(os.path.join(QUOTE_BG_DIR, f)))
     return (
         f"Kevin Gold Signals Bot is running! ✅\n"
         f"Channel 1: {CHAT_ID}{ch2_info}\n"
         f"Gold trade active: {'Yes' if gold else 'No'}\n"
         f"Bitcoin trade active: {'Yes' if btc else 'No'}\n"
         f"Price monitor: Running every 30s\n"
-        f"State backups: 3 files"
+        f"State backups: 3 files\n"
+        f"Quote backgrounds found: {bg_found}/10"
     )
 
-# ─── MAIN ────────────────────────────────────────────────────────────────────
 
+# ─── MAIN ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     threading.Thread(target=price_monitor, daemon=True).start()
     threading.Thread(target=quote_scheduler, daemon=True).start()
