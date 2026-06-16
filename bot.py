@@ -677,6 +677,20 @@ def webhook():
                 )
 
             signal_ids = send_signal_with_chart(text, pair)
+
+            # Queue signal for MT5 EA to pick up on next poll
+            with mt5_signal_lock:
+                mt5_pending_signal.clear()
+                mt5_pending_signal.update({
+                    "id":        f"{pair}_{int(time.time())}",
+                    "pair":      pair,
+                    "direction": direction,
+                    "entry_mid": entry_mid,
+                    "sl":        sl,
+                    "tp1":       tp_levels[0] if len(tp_levels) > 0 else 0,
+                    "tp2":       tp_levels[1] if len(tp_levels) > 1 else 0,
+                    "tp3":       tp_levels[2] if len(tp_levels) > 2 else 0,
+                })
             with state_lock:
                 active_trades[pair] = {
                     "direction":      direction,
@@ -712,6 +726,23 @@ def telegram_update():
     except Exception as e:
         logger.error(f"Telegram update error: {e}")
     return jsonify({"ok": True})
+
+
+# ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
+# The MT5 EA polls this every 5 seconds to check for new signals.
+# Returns the latest pending signal once, then clears it so it's not
+# re-executed on the next poll.
+mt5_pending_signal = {}
+mt5_signal_lock = threading.Lock()
+
+@app.route("/mt5_signal", methods=["GET"])
+def mt5_signal():
+    with mt5_signal_lock:
+        if not mt5_pending_signal:
+            return "none"
+        signal = dict(mt5_pending_signal)
+        mt5_pending_signal.clear()
+    return jsonify(signal)
 
 
 # ─── HEALTH ──────────────────────────────────────────────────────────────────
