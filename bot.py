@@ -561,19 +561,21 @@ def price_monitor():
                 tp_hit_count = trade.get("tp_hit_count", 0)
 
                 hit_tp = hit_sl = hit_be = False
+                SL_BUFFER = 6.0   # Twelve Data API runs ~5-6pts above real broker price
+                BE_BUFFER = 6.0
                 if direction == "BUY":
                     if tp_levels and price >= tp_levels[0]:
                         hit_tp = True
-                    elif price <= sl:
+                    elif price <= sl + SL_BUFFER:
                         hit_sl = True
-                    elif be is not None and price <= be and tp_hit_count > 0:
+                    elif be is not None and price <= be + BE_BUFFER and tp_hit_count > 0:
                         hit_be = True
                 else:
                     if tp_levels and price <= tp_levels[0]:
                         hit_tp = True
-                    elif price >= sl:
+                    elif price >= sl - SL_BUFFER:
                         hit_sl = True
-                    elif be is not None and price >= be and tp_hit_count > 0:
+                    elif be is not None and price >= be - BE_BUFFER and tp_hit_count > 0:
                         hit_be = True
 
                 if hit_tp:
@@ -726,6 +728,73 @@ def telegram_update():
     except Exception as e:
         logger.error(f"Telegram update error: {e}")
     return jsonify({"ok": True})
+
+
+@app.route("/mt5_close", methods=["POST"])
+def mt5_close():
+    """
+    Called by the MT5 EA the moment a position closes (TP or SL).
+    MT5 is connected to the real broker feed so this is instant and accurate.
+    """
+    try:
+        data       = request.get_json(force=True)
+        pair       = data.get("pair", "XAUUSD")
+        close_type = data.get("close_type", "SL")
+        price      = float(data.get("price", 0))
+        profit     = float(data.get("profit", 0))
+        comment    = data.get("comment", "")
+
+        logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
+
+        if close_type == "TP1":
+            if pair == "XAUUSD":
+                text = (
+                    "<b>GOLD SMASHED TP1 ✅✅✅</b>\n\n"
+                    "☑️ Close your positions now and secure your profits\n\n"
+                    "Or\n\n"
+                    "☑️ Move your SL to Break Even and let the trade run risk free"
+                )
+            else:
+                text = (
+                    "<b>BITCOIN SMASHED TP1 ✅✅✅</b>\n\n"
+                    "☑️ ALL TARGETS HIT!\n\n"
+                    "💰 Full profits secured.\n\n"
+                    "👏 Well done team!"
+                )
+        elif close_type == "TP2":
+            text = (
+                "<b>GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
+                "☑️ Close remaining positions and secure your profits\n\n"
+                "Or\n\n"
+                "☑️ Let the remaining trade run risk free to TP3"
+            )
+        elif close_type == "TP3":
+            text = (
+                "<b>GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
+                "☑️ ALL TARGETS HIT!\n\n"
+                "💰 Full profits secured.\n\n"
+                "👏 Well done team!"
+            )
+        else:  # SL
+            text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
+
+        # Find signal message IDs to reply to (threaded message)
+        with state_lock:
+            trade_state = active_trades.get(pair)
+            signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
+
+            # Clear trade state when SL or final TP hits
+            if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
+                active_trades[pair] = None
+                save_state(active_trades)
+
+        keyboard = JOIN_BUTTON if close_type != "SL" else None
+        send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.error(f"mt5_close error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
