@@ -97,6 +97,7 @@ def save_state(state):
             logger.error(f"State save failed {path}: {e}")
 
 active_trades = load_state()
+last_entry_time = {}
 
 # ─── TELEGRAM ────────────────────────────────────────────────────────────────
 
@@ -323,9 +324,15 @@ def webhook():
         logger.info(f"Webhook: {event} | {pair} | {direction} | {price}")
 
         if event == "entry":
+            now = time.time()
             with state_lock:
                 if active_trades.get(pair) is not None:
                     return jsonify({"status": "ignored", "reason": "trade active"})
+                last_entry = last_entry_time.get(pair, 0)
+                if now - last_entry < 60:
+                    logger.warning(f"Duplicate entry for {pair} ignored — last one {now - last_entry:.1f}s ago")
+                    return jsonify({"status": "ignored", "reason": "duplicate within 60s"})
+                last_entry_time[pair] = now
 
             if pair == "XAUUSD":
                 # BUY: entry low = price-2, entry high = price
