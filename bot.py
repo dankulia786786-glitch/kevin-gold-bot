@@ -562,21 +562,21 @@ def price_monitor():
                 tp_hit_count = trade.get("tp_hit_count", 0)
 
                 hit_tp = hit_sl = hit_be = False
-                SL_BUFFER = 6.0   # Twelve Data API runs ~5-6pts above real broker price
-                BE_BUFFER = 6.0
+                SL_BUFFER = 6.0   # API runs ~6pts above real broker price
+                BE_BUFFER = 0.0   # BE must be exact — no buffer to avoid false exits
                 if direction == "BUY":
                     if tp_levels and price >= tp_levels[0]:
                         hit_tp = True
                     elif price <= sl + SL_BUFFER:
                         hit_sl = True
-                    elif be is not None and price <= be + BE_BUFFER and tp_hit_count > 0:
+                    elif be is not None and price <= be and tp_hit_count > 0:
                         hit_be = True
                 else:
                     if tp_levels and price <= tp_levels[0]:
                         hit_tp = True
                     elif price >= sl - SL_BUFFER:
                         hit_sl = True
-                    elif be is not None and price >= be - BE_BUFFER and tp_hit_count > 0:
+                    elif be is not None and price >= be and tp_hit_count > 0:
                         hit_be = True
 
                 if hit_tp:
