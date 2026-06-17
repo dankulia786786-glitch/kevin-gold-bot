@@ -562,22 +562,19 @@ def price_monitor():
                 tp_hit_count = trade.get("tp_hit_count", 0)
 
                 hit_tp = hit_sl = hit_be = False
-                SL_BUFFER = 6.0   # API runs ~6pts above real broker price
                 BE_BUFFER = 0.0   # BE must be exact — no buffer to avoid false exits
                 if direction == "BUY":
                     if tp_levels and price >= tp_levels[0]:
                         hit_tp = True
-                    elif price <= sl + SL_BUFFER:
-                        hit_sl = True
                     elif be is not None and price <= be and tp_hit_count > 0:
                         hit_be = True
+                    # Note: SL handled by MT5 EA via /mt5_close endpoint
                 else:
                     if tp_levels and price <= tp_levels[0]:
                         hit_tp = True
-                    elif price >= sl - SL_BUFFER:
-                        hit_sl = True
                     elif be is not None and price >= be and tp_hit_count > 0:
                         hit_be = True
+                    # Note: SL handled by MT5 EA via /mt5_close endpoint
 
                 if hit_tp:
                     tp_num = tp_hit_count + 1
