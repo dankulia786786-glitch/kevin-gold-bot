@@ -115,6 +115,7 @@ def get_quote_state():
 
 def save_quote_state(state):
     try:
+        os.makedirs("/data", exist_ok=True)
         with open(QUOTE_STATE_FILE, "w") as f:
             json.dump(state, f)
     except Exception as e:
@@ -370,6 +371,7 @@ def load_state():
 
 
 def save_state(state):
+    os.makedirs("/data", exist_ok=True)
     payload = json.dumps(state)
     for path in STATE_FILES:
         try:
