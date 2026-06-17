@@ -21,9 +21,9 @@ CHAT_ID_2  = os.environ.get("CHAT_ID_2", "")
 OWNER_ID   = os.environ.get("OWNER_ID", "8842842151")
 
 STATE_FILES = [
-    "/tmp/trade_state.json",
-    "/tmp/trade_state_b1.json",
-    "/tmp/trade_state_b2.json"
+    "/data/trade_state.json",
+    "/data/trade_state_b1.json",
+    "/data/trade_state_b2.json"
 ]
 
 TELEGRAM_URL   = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -32,7 +32,7 @@ state_lock     = threading.Lock()
 
 # ─── DAILY MOTIVATIONAL QUOTE ────────────────────────────────────────────────
 QUOTE_AUTHOR = "Kevin Burns & Team"
-QUOTE_STATE_FILE = "/tmp/quote_state.json"
+QUOTE_STATE_FILE = "/data/quote_state.json"
 
 # Background images live in this folder next to bot.py on GitHub.
 # bg_01.jpg ... bg_10.jpg — Kevin's own lifestyle photos.
@@ -40,67 +40,66 @@ QUOTE_BG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quote_b
 QUOTE_BG_FILES = [f"bg_{i:02d}.jpg" for i in range(1, 11)]
 
 MOTIVATIONAL_QUOTES = [
-    "Discipline is choosing between what you want now and what you want most.",
-    "The market rewards patience, not impulse.",
-    "Every trade is a lesson. Every loss is tuition.",
-    "Build the second income today so tomorrow has options.",
-    "Wealth is built in silence, not in noise.",
-    "Consistency beats intensity every single time.",
-    "Your future self is watching the decisions you make right now.",
-    "Money loves speed but rewards patience.",
-    "Stack small wins. They become big ones.",
-    "The pain of discipline weighs ounces. The pain of regret weighs tons.",
-    "Income you build once can pay you forever.",
-    "Working hard for money is good. Making money work for you is freedom.",
-    "Nobody is coming to save your finances but you.",
-    "Every pound saved is a soldier you send into the future.",
+    "The stock market is a device for transferring money from the impatient to the patient.",
     "Risk comes from not knowing what you're doing.",
-    "Slow money is still money. Quitting is zero money.",
-    "A second income is just a decision you haven't made yet.",
-    "Average plans produce average results. Be deliberate.",
-    "The market doesn't care about your feelings, only your process.",
-    "Financial freedom is built one disciplined decision at a time.",
-    "Hard work in silence, success will make the noise.",
-    "You don't need more time, you need more focus.",
-    "Investing is the closest thing to a time machine for your money.",
-    "Comfort today, struggle tomorrow. Struggle today, comfort tomorrow.",
-    "The best investment you can make is in your own discipline.",
-    "Patience is the edge most traders give up too early.",
-    "Small steady habits beat one big lucky win.",
-    "You are one good habit away from a different year.",
-    "What you repeat, you become.",
-    "The goal isn't more money. It's more options.",
-    "A second stream of income is a second chance at freedom.",
-    "Trade the plan, not the emotion.",
-    "Every morning is a fresh account with zero losses yet.",
-    "If it was easy, everyone would already be financially free.",
-    "Plant the seed today even if the shade comes years later.",
-    "Money grows where attention and discipline meet.",
-    "Your network and your net worth grow the same way: consistently.",
-    "Skipping today's effort is borrowing from tomorrow's results.",
-    "Be the person your future bank account is proud of.",
-    "The market punishes impatience and rewards process.",
-    "You don't find time for wealth, you make time for it.",
-    "One percent better every day compounds into everything.",
-    "Quiet consistency outperforms loud motivation.",
-    "Every skill you build today is income you haven't collected yet.",
-    "The hardest part of investing is doing nothing when it's working.",
-    "Build it boring, build it steady, build it to last.",
-    "A second income isn't extra, it's insurance.",
-    "Confidence in trading comes from preparation, not luck.",
-    "You're not behind, you're early if you start today.",
-    "Wealth whispers, it never shouts.",
-    "Discipline today buys options tomorrow.",
-    "Every successful trader was once a beginner who refused to quit.",
-    "The work you avoid is usually the work that pays the most.",
-    "Most people overestimate today and underestimate this year.",
-    "Money management is just self management with numbers.",
-    "You can't control the market, only your reaction to it.",
-    "Show up on the boring days, that's where the real gains live.",
-    "Every habit is a vote for the person you're becoming.",
-    "Building wealth is a marathon disguised as a thousand short sprints.",
-    "Your bank balance is a reflection of your daily decisions.",
-    "Start where you are. Use what you have. Do what you can.",
+    "The best investment you can make is in yourself.",
+    "Price is what you pay. Value is what you get.",
+    "Someone is sitting in the shade today because someone planted a tree long ago.",
+    "Do not save what is left after spending, but spend what is left after saving.",
+    "In investing, what is comfortable is rarely profitable.",
+    "The four most dangerous words in investing are: this time it's different.",
+    "Wide diversification is only required when investors do not understand what they are doing.",
+    "It's not how much money you make, but how much money you keep.",
+    "The individual investor should act consistently as an investor and not as a speculator.",
+    "Know what you own, and know why you own it.",
+    "The time to buy is when there's blood in the streets.",
+    "Compound interest is the eighth wonder of the world.",
+    "An investment in knowledge pays the best interest.",
+    "The more you learn, the more you earn.",
+    "Financial freedom is available to those who learn about it and work for it.",
+    "A second income is not a luxury. It is a necessity.",
+    "Don't work for money. Make money work for you.",
+    "The secret to wealth is simple: spend less than you earn and invest the rest.",
+    "Investing is laying out money now to get more money back in the future.",
+    "The stock market is filled with individuals who know the price of everything but the value of nothing.",
+    "Never depend on a single income. Make investment to create a second source.",
+    "Money is a terrible master but an excellent servant.",
+    "The goal of investing is to find situations where it is safe to be non-diversified.",
+    "Wealth is not about having a lot of money; it's about having a lot of options.",
+    "Success in investing doesn't correlate with IQ. What you need is the temperament.",
+    "Every pound you invest today is a soldier working for your future.",
+    "The best time to invest was yesterday. The second best time is today.",
+    "Trading is a skill. Investing is a discipline. Master both.",
+    "A budget is telling your money where to go instead of wondering where it went.",
+    "Build assets, not liabilities. That is the game of the wealthy.",
+    "Your income is not your wealth. Your savings rate is.",
+    "The wealthy invest first and spend what remains.",
+    "Small consistent investments today create enormous wealth tomorrow.",
+    "Markets fluctuate. Discipline doesn't have to.",
+    "Patience is the most valuable commodity in the financial markets.",
+    "The difference between the rich and everyone else is what they do with their money after they earn it.",
+    "Capital grows when you protect it first and grow it second.",
+    "A man who stops advertising to save money is like a man who stops a clock to save time.",
+    "Real wealth is passive income exceeding your expenses.",
+    "Opportunities come infrequently. When it rains gold, put out the bucket.",
+    "Buy when everyone is selling. Sell when everyone is buying.",
+    "The intelligent investor is a realist who sells to optimists and buys from pessimists.",
+    "Your financial future is built one smart decision at a time.",
+    "Money is like a seed. Plant it wisely and it will grow beyond what you imagined.",
+    "Time in the market beats timing the market.",
+    "The wealthy don't earn more. They retain more and deploy it wisely.",
+    "Trading without a plan is gambling. Plan your trade, trade your plan.",
+    "A rising tide lifts all boats. Position yourself in the right waters.",
+    "Diversify your income. One stream can dry up. Many streams become a river.",
+    "The greatest returns come from those with the longest time horizons.",
+    "Economic cycles repeat. Position yourself ahead of the next one.",
+    "Control your emotions or the market will control your account.",
+    "Capital preservation is the first rule of wealth building.",
+    "Never invest money you cannot afford to lose. Never fail to invest money you can.",
+    "The market rewards research, discipline, and patience above all else.",
+    "Wealth is built quietly, one correct decision at a time.",
+    "Start small. Stay consistent. Think long term. That is the formula.",
+    "True financial freedom is waking up without an alarm and still being paid.",
 ]
 
 
@@ -629,19 +628,19 @@ def webhook():
 
             if pair == "XAUUSD":
                 if direction == "BUY":
-                    entry_low  = round(price - 2, 2)
-                    entry_high = round(price, 2)
-                    tp1 = round(price + 2, 2)
-                    tp2 = round(price + 3, 2)
-                    tp3 = round(price + 10, 2)
-                    sl  = round(price - 12, 2)
-                else:
-                    entry_low  = round(price, 2)
+                    entry_low  = round(price - 1, 2)
                     entry_high = round(price + 2, 2)
-                    tp1 = round(price - 2, 2)
-                    tp2 = round(price - 3, 2)
-                    tp3 = round(price - 10, 2)
-                    sl  = round(price + 12, 2)
+                    tp1 = round(price + 4, 2)
+                    tp2 = round(price + 5, 2)
+                    tp3 = round(price + 12, 2)
+                    sl  = round(price - 11, 2)
+                else:
+                    entry_low  = round(price - 2, 2)
+                    entry_high = round(price + 1, 2)
+                    tp1 = round(price - 4, 2)
+                    tp2 = round(price - 5, 2)
+                    tp3 = round(price - 12, 2)
+                    sl  = round(price + 11, 2)
                 entry_mid = price
                 tp_levels = [tp1, tp2, tp3]
                 emoji = "🟢" if direction == "BUY" else "🔴"
