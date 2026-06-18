@@ -737,10 +737,46 @@ mt5_close_lock = threading.Lock()
 @app.route("/mt5_close", methods=["POST"])
 def mt5_close():
     """
-    EA no longer reports closes — Railway price monitor handles all messages.
-    This endpoint kept for compatibility but ignores all incoming data.
+    Called by MT5 EA for SL closes only.
+    Railway price monitor handles all TP messages.
+    EA reports SL instantly via DEAL_REASON_SL — no API lag, no false triggers.
     """
-    return jsonify({"status": "ignored"})
+    try:
+        data       = request.get_json(force=True)
+        pair       = data.get("pair", "XAUUSD")
+        close_type = data.get("close_type", "SL")
+        price      = float(data.get("price", 0))
+        profit     = float(data.get("profit", 0))
+
+        logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
+
+        # Only handle SL — TPs handled by Railway price monitor
+        if close_type != "SL":
+            return jsonify({"status": "ignored"})
+
+        # Dedup — block duplicate SL within 60 seconds
+        dedup_key = f"{pair}_SL"
+        now = time.time()
+        with mt5_close_lock:
+            last_sent = mt5_close_recent.get(dedup_key, 0)
+            if now - last_sent < 60:
+                logger.info(f"Duplicate SL ignored for {pair}")
+                return jsonify({"status": "duplicate_ignored"})
+            mt5_close_recent[dedup_key] = now
+
+        text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
+
+        with state_lock:
+            trade_state = active_trades.get(pair)
+            signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
+            active_trades[pair] = None
+            save_state(active_trades)
+
+        send_message(text, reply_to_ids=signal_ids)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.error(f"mt5_close error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
