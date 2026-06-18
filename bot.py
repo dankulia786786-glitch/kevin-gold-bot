@@ -387,10 +387,11 @@ def notify_owner(text):
         logger.error(f"Owner notify error: {e}")
 
 
+# ─── JOIN BUTTON — routes to VIP onboarding bot ──────────────────────────────
 JOIN_BUTTON = {
     "inline_keyboard": [[{
         "text": "👉 JOIN PM NOW FOR FREE! 👈",
-        "url": "https://t.me/Test_indicator01_bot"
+        "url": "https://t.me/KevinGoldVIP_bot"
     }]]
 }
 
@@ -461,7 +462,7 @@ def get_price(pair):
 
 
 # ─── TP / SL MESSAGES ────────────────────────────────────────────────────────
-TP_SL_SENT = {}  # track sent messages per signal to prevent duplicates
+TP_SL_SENT = {}
 tp_sl_lock = threading.Lock()
 
 
@@ -504,18 +505,12 @@ def send_sl_message(pair, signal_ids):
 
 
 # ─── MT5 CLOSE ENDPOINT ──────────────────────────────────────────────────────
-# EA reports TP1/TP2/TP3/SL directly from broker
-# 60-second dedup prevents duplicates from multiple position closes
 mt5_close_recent = {}
 mt5_close_lock   = threading.Lock()
 
 
 @app.route("/mt5_close", methods=["POST"])
 def mt5_close():
-    """
-    MT5 EA reports TP1/TP2/TP3/SL closes directly from broker feed.
-    Dedup blocks duplicates. BE closes are silent (EA doesn't call this).
-    """
     try:
         data       = request.get_json(force=True)
         pair       = data.get("pair", "XAUUSD")
@@ -528,7 +523,7 @@ def mt5_close():
         if close_type not in ("TP1", "TP2", "TP3", "SL"):
             return jsonify({"status": "ignored"})
 
-        # 60-second dedup — blocks all 3 positions reporting same TP level
+        # 60-second dedup — blocks duplicate closes for same TP/SL level
         dedup_key = f"{pair}_{close_type}"
         now = time.time()
         with mt5_close_lock:
@@ -537,7 +532,6 @@ def mt5_close():
                 return jsonify({"status": "duplicate_ignored"})
             mt5_close_recent[dedup_key] = now
 
-        # Build message
         if close_type == "TP1":
             if pair == "XAUUSD":
                 text = (
@@ -577,7 +571,6 @@ def mt5_close():
         with state_lock:
             trade_state = active_trades.get(pair)
             signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
-            # Clear state on final close
             if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
                 active_trades[pair] = None
                 save_state(active_trades)
@@ -728,14 +721,13 @@ def telegram_update():
     return jsonify({"ok": True})
 
 
-# ─── HEALTH ──────────────────────────────────────────────────────────────────
+# ─── HEALTH & ADMIN ──────────────────────────────────────────────────────────
 @app.route("/reset", methods=["GET"])
 def reset():
     with state_lock:
         active_trades["XAUUSD"] = None
         active_trades["BTCUSD"] = None
         save_state(active_trades)
-    # Clear dedup on reset so next trade starts fresh
     with mt5_close_lock:
         mt5_close_recent.clear()
     return "All trades cleared! ✅ Bot ready for new signals."
