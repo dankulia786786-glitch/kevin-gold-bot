@@ -34,8 +34,6 @@ state_lock     = threading.Lock()
 QUOTE_AUTHOR = "Kevin Burns & Team"
 QUOTE_STATE_FILE = "/data/quote_state.json"
 
-# Background images live in this folder next to bot.py on GitHub.
-# bg_01.jpg ... bg_10.jpg — Kevin's own lifestyle photos.
 QUOTE_BG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "quote_bg")
 QUOTE_BG_FILES = [f"bg_{i:02d}.jpg" for i in range(1, 11)]
 
@@ -152,31 +150,19 @@ def pick_daily_bg():
 
 FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 BUNDLED_BOLD_FONT = os.path.join(FONTS_DIR, "DejaVuSans-Bold.ttf")
-
 _font_warning_logged = False
 
 
 def find_font(bold=True, size=54):
-    """
-    Loads the bold font bundled in the repo's /fonts folder. This is
-    deliberate — Railway's container does NOT have system fonts like
-    DejaVu or Liberation installed by default. Relying on system font
-    paths silently fell back to PIL's tiny built-in default font on
-    Railway, which is why text looked fine in testing but came out
-    tiny in the real Telegram channel. Shipping the .ttf file directly
-    in the repo removes that dependency entirely.
-    """
     global _font_warning_logged
     try:
         if os.path.exists(BUNDLED_BOLD_FONT):
             return ImageFont.truetype(BUNDLED_BOLD_FONT, size)
     except Exception as e:
-        logger.error(f"Bundled font failed to load: {e}")
-
-    # Fallback to system fonts only if the bundled one is somehow missing
+        logger.error(f"Bundled font failed: {e}")
     candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]
     for path in candidates:
         try:
@@ -184,36 +170,21 @@ def find_font(bold=True, size=54):
                 return ImageFont.truetype(path, size)
         except Exception:
             continue
-
     if not _font_warning_logged:
-        logger.error(
-            "⚠️ NO BOLD FONT FOUND ANYWHERE — quote text will render tiny. "
-            "Check that fonts/DejaVuSans-Bold.ttf was uploaded to GitHub."
-        )
+        logger.error("⚠️ NO BOLD FONT FOUND")
         _font_warning_logged = True
     return ImageFont.load_default()
 
 
 def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
-    """
-    Overlays a bold quote + author name on top of one of Kevin's own
-    lifestyle photos (bg_01.jpg ... bg_10.jpg). A dark gradient band is
-    drawn behind the text zone so it stays readable regardless of how
-    light, dark, or busy the underlying photo is.
-    """
     if bg_path is None or not os.path.exists(bg_path):
-        # Fallback so the bot never crashes even if a file is missing
         W, H = 1080, 1080
         img = Image.new("RGB", (W, H), (15, 15, 18))
     else:
         img = Image.open(bg_path).convert("RGB")
         W, H = img.size
-
-    # Slightly darken the whole photo so white text always has contrast
     overlay_dark = Image.new("RGB", (W, H), (0, 0, 0))
     img = Image.blend(img, overlay_dark, 0.18)
-
-    # Dark gradient band behind the text zone (middle third of the image)
     band = Image.new("L", (W, H), 0)
     bdraw = ImageDraw.Draw(band)
     band_top = int(H * 0.30)
@@ -230,16 +201,13 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
         bdraw.line([(0, y), (W, y)], fill=alpha)
     black = Image.new("RGB", (W, H), (0, 0, 0))
     img = Image.composite(black, img, band)
-
     draw = ImageDraw.Draw(img)
     draw.rectangle([0, 0, W, 10], fill=(212, 175, 55))
-
     quote_upper = quote.upper()
     font_size = 80
     max_width_chars = 16
     font_quote = find_font(bold=True, size=font_size)
     lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
-
     band_center = (band_top + band_bottom) // 2
     while True:
         line_height = int(font_size * 1.2)
@@ -249,25 +217,21 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
         font_size -= 4
         font_quote = find_font(bold=True, size=font_size)
         lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
-
     line_height = int(font_size * 1.2)
     total_h = len(lines) * line_height
     y = band_center - total_h // 2
-
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font_quote)
         w = bbox[2] - bbox[0]
         draw.text(((W - w) // 2 + 4, y + 4), line, font=font_quote, fill=(0, 0, 0))
         draw.text(((W - w) // 2, y), line, font=font_quote, fill=(255, 255, 255))
         y += line_height
-
     draw.line([(W // 2 - 80, y + 35), (W // 2 + 80, y + 35)], fill=(212, 175, 55), width=5)
     font_author = find_font(bold=True, size=36)
     author_text = author.upper()
     bbox = draw.textbbox((0, 0), author_text, font=font_author)
     w = bbox[2] - bbox[0]
     draw.text(((W - w) // 2, y + 55), author_text, font=font_author, fill=(212, 175, 55))
-
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=90)
     buf.seek(0)
@@ -283,16 +247,16 @@ def send_daily_quote():
         caption = "🔔 <b>Unmute &amp; Pin this channel to never miss a signal!</b>"
         for ch in channels:
             send_photo_to_channel(ch, image_bytes, caption)
-        logger.info(f"Daily quote sent: {quote[:40]}... | bg={os.path.basename(bg_path)}")
+        logger.info(f"Daily quote sent: {quote[:40]}...")
     except Exception as e:
         logger.error(f"Daily quote error: {e}")
 
 
 def quote_scheduler():
-    logger.info("Quote scheduler started — checking every 30s for 08:00 UK time")
+    logger.info("Quote scheduler started")
     while True:
         try:
-            now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)  # UK summer time (UTC+1)
+            now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
             today_str = now.strftime("%Y-%m-%d")
             if now.hour == 8 and now.minute == 0:
                 state = get_quote_state()
@@ -397,9 +361,9 @@ def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
         data = r.json()
         if data.get("ok"):
             return data["result"]["message_id"]
-        logger.error(f"Telegram rejected message to {chat_id}: {data}")
+        logger.error(f"Telegram rejected: {data}")
     except Exception as e:
-        logger.error(f"Send error to {chat_id}: {e}")
+        logger.error(f"Send error: {e}")
     return None
 
 
@@ -497,6 +461,10 @@ def get_price(pair):
 
 
 # ─── TP / SL MESSAGES ────────────────────────────────────────────────────────
+TP_SL_SENT = {}  # track sent messages per signal to prevent duplicates
+tp_sl_lock = threading.Lock()
+
+
 def send_tp_message(pair, tp_num, signal_ids):
     if pair == "XAUUSD":
         if tp_num == 1:
@@ -535,73 +503,105 @@ def send_sl_message(pair, signal_ids):
     send_message(text, reply_to_ids=signal_ids)
 
 
-# ─── PRICE MONITOR ───────────────────────────────────────────────────────────
-def price_monitor():
-    logger.info("Price monitor started — 30 second intervals")
-    fail_counts = {"XAUUSD": 0, "BTCUSD": 0}
-    while True:
-        try:
-            with state_lock:
-                snapshot = json.loads(json.dumps(active_trades))
-            for pair, trade in snapshot.items():
-                if trade is None:
-                    fail_counts[pair] = 0
-                    continue
-                price = get_price(pair)
-                if price is None:
-                    fail_counts[pair] += 1
-                    if fail_counts[pair] == 10:
-                        notify_owner(f"⚠️ ALERT: Cannot fetch {pair} price for 5 minutes.")
-                    continue
-                fail_counts[pair] = 0
-                direction    = trade["direction"]
-                tp_levels    = trade["tp_levels"]
-                sl           = trade["sl"]
-                be           = trade.get("be")
-                signal_ids   = trade.get("signal_msg_ids", {})
-                tp_hit_count = trade.get("tp_hit_count", 0)
+# ─── MT5 CLOSE ENDPOINT ──────────────────────────────────────────────────────
+# EA reports TP1/TP2/TP3/SL directly from broker
+# 60-second dedup prevents duplicates from multiple position closes
+mt5_close_recent = {}
+mt5_close_lock   = threading.Lock()
 
-                hit_tp = hit_sl = hit_be = False
-                if direction == "BUY":
-                    if tp_levels and price >= tp_levels[0]:
-                        hit_tp = True
-                    elif price <= sl:
-                        hit_sl = True
-                    elif be is not None and price <= be and tp_hit_count > 0:
-                        hit_be = True
-                else:
-                    if tp_levels and price <= tp_levels[0]:
-                        hit_tp = True
-                    elif price >= sl:
-                        hit_sl = True
-                    elif be is not None and price >= be and tp_hit_count > 0:
-                        hit_be = True
 
-                if hit_tp:
-                    tp_num = tp_hit_count + 1
-                    send_tp_message(pair, tp_num, signal_ids)
-                    remaining = tp_levels[1:]
-                    with state_lock:
-                        if active_trades[pair]:
-                            active_trades[pair]["tp_levels"]    = remaining
-                            active_trades[pair]["tp_hit_count"] = tp_num
-                            if pair == "XAUUSD" and tp_num == 1:
-                                active_trades[pair]["be"] = trade["entry_mid"]
-                            if not remaining:
-                                active_trades[pair] = None
-                            save_state(active_trades)
-                elif hit_sl:
-                    send_sl_message(pair, signal_ids)
-                    with state_lock:
-                        active_trades[pair] = None
-                        save_state(active_trades)
-                elif hit_be:
-                    with state_lock:
-                        active_trades[pair] = None
-                        save_state(active_trades)
-        except Exception as e:
-            logger.error(f"Monitor error: {e}")
-        time.sleep(5)  # Check every 5s for fast TP/SL detection
+@app.route("/mt5_close", methods=["POST"])
+def mt5_close():
+    """
+    MT5 EA reports TP1/TP2/TP3/SL closes directly from broker feed.
+    Dedup blocks duplicates. BE closes are silent (EA doesn't call this).
+    """
+    try:
+        data       = request.get_json(force=True)
+        pair       = data.get("pair", "XAUUSD")
+        close_type = data.get("close_type", "")
+        price      = float(data.get("price", 0))
+        profit     = float(data.get("profit", 0))
+
+        logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
+
+        if close_type not in ("TP1", "TP2", "TP3", "SL"):
+            return jsonify({"status": "ignored"})
+
+        # 60-second dedup — blocks all 3 positions reporting same TP level
+        dedup_key = f"{pair}_{close_type}"
+        now = time.time()
+        with mt5_close_lock:
+            if now - mt5_close_recent.get(dedup_key, 0) < 60:
+                logger.info(f"Duplicate {close_type} blocked for {pair}")
+                return jsonify({"status": "duplicate_ignored"})
+            mt5_close_recent[dedup_key] = now
+
+        # Build message
+        if close_type == "TP1":
+            if pair == "XAUUSD":
+                text = (
+                    "<b>GOLD SMASHED TP1 ✅✅✅</b>\n\n"
+                    "☑️ Close your positions now and secure your profits\n\n"
+                    "Or\n\n"
+                    "☑️ Move your SL to Break Even and let the trade run risk free"
+                )
+            else:
+                text = (
+                    "<b>BITCOIN SMASHED TP1 ✅✅✅</b>\n\n"
+                    "☑️ ALL TARGETS HIT!\n\n"
+                    "💰 Full profits secured.\n\n"
+                    "👏 Well done team!"
+                )
+            keyboard = JOIN_BUTTON
+        elif close_type == "TP2":
+            text = (
+                "<b>GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
+                "☑️ Close remaining positions and secure your profits\n\n"
+                "Or\n\n"
+                "☑️ Let the remaining trade run risk free to TP3"
+            )
+            keyboard = JOIN_BUTTON
+        elif close_type == "TP3":
+            text = (
+                "<b>GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
+                "☑️ ALL TARGETS HIT!\n\n"
+                "💰 Full profits secured.\n\n"
+                "👏 Well done team!"
+            )
+            keyboard = JOIN_BUTTON
+        else:  # SL
+            text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
+            keyboard = None
+
+        with state_lock:
+            trade_state = active_trades.get(pair)
+            signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
+            # Clear state on final close
+            if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
+                active_trades[pair] = None
+                save_state(active_trades)
+
+        send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.error(f"mt5_close error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
+mt5_pending_signal = {}
+mt5_signal_lock    = threading.Lock()
+
+
+@app.route("/mt5_signal", methods=["GET"])
+def mt5_signal():
+    with mt5_signal_lock:
+        if not mt5_pending_signal:
+            return "none"
+        signal = dict(mt5_pending_signal)
+        mt5_pending_signal.clear()
+    return jsonify(signal)
 
 
 # ─── WEBHOOK ─────────────────────────────────────────────────────────────────
@@ -622,7 +622,6 @@ def webhook():
                     return jsonify({"status": "ignored", "reason": "trade active"})
                 last_entry = last_entry_time.get(pair, 0)
                 if now - last_entry < 60:
-                    logger.warning(f"Duplicate entry for {pair} ignored — last one {now - last_entry:.1f}s ago")
                     return jsonify({"status": "ignored", "reason": "duplicate within 60s"})
                 last_entry_time[pair] = now
 
@@ -679,7 +678,6 @@ def webhook():
 
             signal_ids = send_signal_with_chart(text, pair)
 
-            # Queue signal for MT5 EA to pick up on next poll
             with mt5_signal_lock:
                 mt5_pending_signal.clear()
                 mt5_pending_signal.update({
@@ -692,6 +690,7 @@ def webhook():
                     "tp2":       tp_levels[1] if len(tp_levels) > 1 else 0,
                     "tp3":       tp_levels[2] if len(tp_levels) > 2 else 0,
                 })
+
             with state_lock:
                 active_trades[pair] = {
                     "direction":      direction,
@@ -723,37 +722,10 @@ def telegram_update():
         text     = message.get("text", "")
         name     = user.get("first_name", "Unknown")
         username = user.get("username", "no username")
-        notify_owner(f"📩 New PM via bot:\nName: {name}\nUsername: @{username}\nMessage: {text}")
+        notify_owner(f"📩 New PM:\nName: {name}\nUsername: @{username}\nMessage: {text}")
     except Exception as e:
         logger.error(f"Telegram update error: {e}")
     return jsonify({"ok": True})
-
-
-# Deduplication for MT5 close notifications
-mt5_close_recent = {}
-mt5_close_lock = threading.Lock()
-
-@app.route("/mt5_close", methods=["POST"])
-def mt5_close():
-    """Railway price monitor handles all TP/SL/BE — EA not used for reporting."""
-    return jsonify({"status": "ignored"})
-
-
-# ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
-# The MT5 EA polls this every 5 seconds to check for new signals.
-# Returns the latest pending signal once, then clears it so it's not
-# re-executed on the next poll.
-mt5_pending_signal = {}
-mt5_signal_lock = threading.Lock()
-
-@app.route("/mt5_signal", methods=["GET"])
-def mt5_signal():
-    with mt5_signal_lock:
-        if not mt5_pending_signal:
-            return "none"
-        signal = dict(mt5_pending_signal)
-        mt5_pending_signal.clear()
-    return jsonify(signal)
 
 
 # ─── HEALTH ──────────────────────────────────────────────────────────────────
@@ -763,6 +735,9 @@ def reset():
         active_trades["XAUUSD"] = None
         active_trades["BTCUSD"] = None
         save_state(active_trades)
+    # Clear dedup on reset so next trade starts fresh
+    with mt5_close_lock:
+        mt5_close_recent.clear()
     return "All trades cleared! ✅ Bot ready for new signals."
 
 
@@ -771,8 +746,8 @@ def test_quote():
     missing = [f for f in QUOTE_BG_FILES if not os.path.exists(os.path.join(QUOTE_BG_DIR, f))]
     send_daily_quote()
     if missing:
-        return f"Test quote sent, but missing background files: {missing}. Check quote_bg folder on GitHub."
-    return "Test quote sent! ✅ Check your channels."
+        return f"Test quote sent, but missing: {missing}"
+    return "Test quote sent! ✅"
 
 
 @app.route("/", methods=["GET"])
@@ -787,7 +762,7 @@ def health():
         f"Channel 1: {CHAT_ID}{ch2_info}\n"
         f"Gold trade active: {'Yes' if gold else 'No'}\n"
         f"Bitcoin trade active: {'Yes' if btc else 'No'}\n"
-        f"Price monitor: Running every 5s\n"
+        f"MT5 EA handles: TP1, TP2, TP3, SL\n"
         f"State backups: 3 files\n"
         f"Quote backgrounds found: {bg_found}/10"
     )
@@ -795,7 +770,6 @@ def health():
 
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    threading.Thread(target=price_monitor, daemon=True).start()
     threading.Thread(target=quote_scheduler, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
