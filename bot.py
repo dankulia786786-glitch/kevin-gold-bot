@@ -804,11 +804,8 @@ def mt5_close():
             if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
                 active_trades[pair] = None
                 save_state(active_trades)
-                # Reset dedup for next trade
-                with mt5_close_lock:
-                    for k in [f"{pair}_TP1", f"{pair}_TP2",
-                               f"{pair}_TP3", f"{pair}_SL"]:
-                        mt5_close_recent.pop(k, None)
+                # Note: dedup is NOT reset here — it stays for 60s to block duplicates
+                # It will naturally expire after 60 seconds for the next trade
 
         send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
         return jsonify({"status": "ok"})
