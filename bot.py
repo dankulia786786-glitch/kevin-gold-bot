@@ -562,16 +562,16 @@ def price_monitor():
                 tp_hit_count = trade.get("tp_hit_count", 0)
 
                 hit_tp = hit_sl = hit_be = False
-                SL_BUFFER = 0.0   # No buffer — SL detection exact, EA handles false closes
+                TP_BUFFER = 3.0   # API runs 2-5pts above broker — require extra confirmation
                 if direction == "BUY":
-                    if tp_levels and price >= tp_levels[0]:
+                    if tp_levels and price >= tp_levels[0] + TP_BUFFER:
                         hit_tp = True
                     elif price <= sl:
                         hit_sl = True
                     elif be is not None and price <= be and tp_hit_count > 0:
                         hit_be = True
                 else:
-                    if tp_levels and price <= tp_levels[0]:
+                    if tp_levels and price <= tp_levels[0] - TP_BUFFER:
                         hit_tp = True
                     elif price >= sl:
                         hit_sl = True
