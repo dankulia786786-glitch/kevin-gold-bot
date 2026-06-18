@@ -562,19 +562,21 @@ def price_monitor():
                 tp_hit_count = trade.get("tp_hit_count", 0)
 
                 hit_tp = hit_sl = hit_be = False
-                BE_BUFFER = 0.0   # BE must be exact — no buffer to avoid false exits
+                SL_BUFFER = 0.0   # No buffer — SL detection exact, EA handles false closes
                 if direction == "BUY":
                     if tp_levels and price >= tp_levels[0]:
                         hit_tp = True
+                    elif price <= sl:
+                        hit_sl = True
                     elif be is not None and price <= be and tp_hit_count > 0:
                         hit_be = True
-                    # Note: SL handled by MT5 EA via /mt5_close endpoint
                 else:
                     if tp_levels and price <= tp_levels[0]:
                         hit_tp = True
+                    elif price >= sl:
+                        hit_sl = True
                     elif be is not None and price >= be and tp_hit_count > 0:
                         hit_be = True
-                    # Note: SL handled by MT5 EA via /mt5_close endpoint
 
                 if hit_tp:
                     tp_num = tp_hit_count + 1
@@ -735,83 +737,10 @@ mt5_close_lock = threading.Lock()
 @app.route("/mt5_close", methods=["POST"])
 def mt5_close():
     """
-    Called by MT5 EA when any position closes.
-    EA handles: TP1, TP2, TP3, SL detection
-    BE close = silent (EA does not call this endpoint for BE)
+    EA no longer reports closes — Railway price monitor handles all messages.
+    This endpoint kept for compatibility but ignores all incoming data.
     """
-    try:
-        data       = request.get_json(force=True)
-        pair       = data.get("pair", "XAUUSD")
-        close_type = data.get("close_type", "SL")
-        price      = float(data.get("price", 0))
-        profit     = float(data.get("profit", 0))
-        comment    = data.get("comment", "")
-
-        logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
-
-        if close_type == "TP1":
-            if pair == "XAUUSD":
-                text = (
-                    "<b>GOLD SMASHED TP1 ✅✅✅</b>\n\n"
-                    "☑️ Close your positions now and secure your profits\n\n"
-                    "Or\n\n"
-                    "☑️ Move your SL to Break Even and let the trade run risk free"
-                )
-            else:
-                text = (
-                    "<b>BITCOIN SMASHED TP1 ✅✅✅</b>\n\n"
-                    "☑️ ALL TARGETS HIT!\n\n"
-                    "💰 Full profits secured.\n\n"
-                    "👏 Well done team!"
-                )
-            keyboard = JOIN_BUTTON
-        elif close_type == "TP2":
-            text = (
-                "<b>GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
-                "☑️ Close remaining positions and secure your profits\n\n"
-                "Or\n\n"
-                "☑️ Let the remaining trade run risk free to TP3"
-            )
-            keyboard = JOIN_BUTTON
-        elif close_type == "TP3":
-            text = (
-                "<b>GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
-                "☑️ ALL TARGETS HIT!\n\n"
-                "💰 Full profits secured.\n\n"
-                "👏 Well done team!"
-            )
-            keyboard = JOIN_BUTTON
-        elif close_type == "SL":
-            text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
-            keyboard = None
-        else:
-            return jsonify({"status": "ignored"})
-
-        # Deduplication — ignore same close type within 60 seconds
-        dedup_key = f"{pair}_{close_type}"
-        now = time.time()
-        with mt5_close_lock:
-            last_sent = mt5_close_recent.get(dedup_key, 0)
-            if now - last_sent < 60:
-                logger.info(f"Duplicate {close_type} ignored for {pair}")
-                return jsonify({"status": "duplicate_ignored"})
-            mt5_close_recent[dedup_key] = now
-
-        with state_lock:
-            trade_state = active_trades.get(pair)
-            signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
-            # Clear trade state on final close
-            if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
-                active_trades[pair] = None
-                save_state(active_trades)
-                # Note: dedup is NOT reset here — it stays for 60s to block duplicates
-                # It will naturally expire after 60 seconds for the next trade
-
-        send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        logger.error(f"mt5_close error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "ignored"})
 
 
 # ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
