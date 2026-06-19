@@ -397,17 +397,128 @@ JOIN_BUTTON = {
 
 
 # ─── PRICE FETCHING ──────────────────────────────────────────────────────────
-def get_price_gold():
+def get_live_indicators(pair):
     try:
         td_key = os.environ.get("TWELVE_DATA_KEY", "")
-        if td_key:
-            r = requests.get(f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={td_key}", timeout=5)
-            if r.status_code == 200:
-                p = float(r.json().get("price", 0))
-                if p > 3000:
-                    return p
-    except Exception:
-        pass
+        if not td_key:
+            return None
+        symbol = "XAU/USD" if pair == "XAUUSD" else "BTC/USD"
+        r1 = requests.get(f"https://api.twelvedata.com/ema?symbol={symbol}&interval=1h&time_period=50&outputsize=1&apikey={td_key}", timeout=6)
+        ema50 = None
+        if r1.status_code == 200:
+            val = r1.json().get("values", [{}])[0].get("ema")
+            if val: ema50 = round(float(val), 2)
+        r2 = requests.get(f"https://api.twelvedata.com/rsi?symbol={symbol}&interval=1h&time_period=14&outputsize=1&apikey={td_key}", timeout=6)
+        rsi = None
+        if r2.status_code == 200:
+            val = r2.json().get("values", [{}])[0].get("rsi")
+            if val: rsi = round(float(val), 1)
+        r3 = requests.get(f"https://api.twelvedata.com/price?symbol={symbol}&apikey={td_key}", timeout=5)
+        price = None
+        if r3.status_code == 200:
+            val = r3.json().get("price")
+            if val: price = round(float(val), 2)
+        if ema50 and rsi and price:
+            return {"ema50": ema50, "rsi": rsi, "price": price}
+    except Exception as e:
+        logger.error(f"Indicator fetch error: {e}")
+    return None
+
+
+def get_analysis(pair, direction):
+    indicators = get_live_indicators(pair)
+    pair_name = "Gold" if pair == "XAUUSD" else "Bitcoin"
+
+    if indicators:
+        ema50 = indicators["ema50"]
+        rsi   = indicators["rsi"]
+        price = indicators["price"]
+        above_ema = price > ema50
+
+        if direction == "BUY":
+            pool = [
+                f"{pair_name} is trading above the 1H EMA50 at {ema50} with RSI at {rsi} showing momentum without being overbought. Buyers are firmly in control.",
+                f"Price has broken above a key resistance structure with RSI at {rsi} and climbing. The path of least resistance is higher.",
+                f"{pair_name} has swept liquidity below a key low and is now pushing higher. Smart money appears to be long from this area.",
+                f"A bullish order block has been respected at this level with RSI at {rsi} building strength. Entry timing looks favourable.",
+                f"The 1H EMA50 at {ema50} is acting as dynamic support with price bouncing cleanly off it. Buyers are defending this zone.",
+                f"Price has formed a higher low structure with RSI at {rsi} confirming bullish momentum. Trend continuation to the upside.",
+                f"A strong rejection wick from a key demand zone signals institutional buying at this level. RSI at {rsi} supports the move.",
+                f"{pair_name} is trading above the 1H EMA50 at {ema50} — this level has flipped to support. London session momentum is to the upside.",
+                f"The Bollinger Bands are expanding upward with price leading the move and RSI at {rsi}. Momentum is clearly bullish.",
+                f"A bullish engulfing candle has formed at a key structure level. RSI at {rsi} gives plenty of room to run higher.",
+                f"Price has broken out of a consolidation range to the upside with RSI at {rsi} confirming the breakout. Targets are above.",
+                f"MACD has crossed bullish on the 1H chart with price above the EMA50 at {ema50}. Both signals align for the buy.",
+            ] if above_ema else [
+                f"{pair_name} is attempting to reclaim the 1H EMA50 at {ema50} with RSI at {rsi}. A confirmed close above signals bullish intent.",
+                f"Price is pushing back into a key demand zone with RSI at {rsi} recovering from lows. Buyers appear to be stepping in.",
+                f"A liquidity sweep below recent lows has been completed with RSI at {rsi} turning up. This is a classic reversal setup.",
+                f"{pair_name} is forming a base near the 1H EMA50 at {ema50} with RSI at {rsi} building. Watch for a break higher.",
+                f"Price has found support at a key structural level with RSI at {rsi} and recovering. Risk-reward favours the buy here.",
+            ]
+        else:  # SELL
+            pool = [
+                f"{pair_name} is trading below the 1H EMA50 at {ema50} with RSI at {rsi} and falling. Structure is bearish — sellers are in control.",
+                f"Price has rejected from a key resistance zone with RSI at {rsi} turning lower. The path of least resistance is down.",
+                f"{pair_name} has swept liquidity above a recent high and is now reversing lower. Smart money appears to be short from here.",
+                f"A bearish order block at {ema50} area has rejected price with RSI at {rsi} declining. Downside targets are in view.",
+                f"The 1H EMA50 at {ema50} is acting as dynamic resistance with price failing to break above it. Sellers are defending this zone.",
+                f"Price has formed a lower high structure with RSI at {rsi} confirming bearish momentum. Trend continuation to the downside.",
+                f"A strong rejection wick from a key supply zone signals institutional selling at this level. RSI at {rsi} supports the move.",
+                f"{pair_name} is trading below the 1H EMA50 at {ema50} — this level has flipped to resistance. Pressure remains to the downside.",
+                f"The Bollinger Bands are expanding downward with price leading and RSI at {rsi}. Momentum is clearly bearish.",
+                f"A bearish engulfing candle has formed at a key resistance level. RSI at {rsi} confirms sellers are in control.",
+                f"Price has broken down from a consolidation range with RSI at {rsi} confirming the breakdown. Targets are below.",
+                f"MACD has crossed bearish on the 1H chart with price below the EMA50 at {ema50}. Both signals align for the sell.",
+            ] if not above_ema else [
+                f"{pair_name} has failed to hold above the 1H EMA50 at {ema50} with RSI at {rsi}. Price is rolling over — sell pressure increasing.",
+                f"Price is rejecting the 1H EMA50 at {ema50} from above with RSI at {rsi} turning lower. Bears are taking back control.",
+                f"A liquidity sweep above recent highs has been completed with RSI at {rsi} turning down. Classic sell-the-rally setup.",
+                f"{pair_name} is struggling to maintain levels above the EMA50 at {ema50} with RSI at {rsi} fading. Downside pressure building.",
+                f"Price has stalled at a key resistance zone with RSI at {rsi} declining. Risk-reward favours the sell from here.",
+            ]
+    else:
+        # Fallback — varied general price action, no live data
+        if pair == "XAUUSD":
+            if direction == "BUY":
+                pool = [
+                    "Price has bounced cleanly off a key support level with buyer interest confirmed. Entry looks favourable.",
+                    "A liquidity sweep below recent lows has completed and price is now reversing higher. Smart money appears long.",
+                    "Bullish momentum is building from a key demand zone — risk is defined and reward potential looks strong.",
+                    "A strong rejection wick at support confirms buying interest at this level. The setup favours the upside.",
+                    "Price has broken out of consolidation to the upside with a clean structure forming above. Targets are higher.",
+                    "A bullish order block has been respected at this level. The trade offers strong risk-reward to the upside.",
+                    "The London session is driving bullish momentum from a key structural level. Entry here looks well-timed.",
+                ]
+            else:
+                pool = [
+                    "Price has rejected sharply from a key resistance area with sellers taking control. Downside targets in view.",
+                    "A liquidity sweep above recent highs has completed and price is now reversing lower. Smart money appears short.",
+                    "Bearish momentum is building from a key supply zone — risk is defined and targets are to the downside.",
+                    "A strong rejection wick at resistance confirms selling pressure at this level. The setup favours the downside.",
+                    "Price has broken down from consolidation with a clean bearish structure forming. Targets are lower.",
+                    "A bearish order block has rejected price at this level. The trade offers strong risk-reward to the downside.",
+                    "The NY session is driving bearish momentum from a key structural resistance. Sell setup looks well-timed.",
+                ]
+        else:
+            if direction == "BUY":
+                pool = [
+                    "Bitcoin is showing strength from a key demand zone with momentum building to the upside.",
+                    "A liquidity sweep below support has completed and BTC is now pushing higher. Buyers are in control.",
+                    "Buying interest has emerged at a key structural level. Risk is well defined on this setup.",
+                    "Bitcoin has bounced from a key order block with bullish momentum building. Targets are above.",
+                ]
+            else:
+                pool = [
+                    "Bitcoin is showing weakness at a key supply zone with momentum building to the downside.",
+                    "A liquidity sweep above resistance has completed and BTC is now reversing lower. Sellers are in control.",
+                    "Selling pressure has emerged at a key structural level. Risk is well defined on this setup.",
+                    "Bitcoin has rejected a key order block with bearish momentum building. Targets are below.",
+                ]
+
+    return random.choice(pool)
+
+
     try:
         r = requests.get("https://api.gold-api.com/price/XAU", timeout=6)
         if r.status_code == 200:
@@ -779,6 +890,7 @@ def webhook():
                 entry_mid = price
                 tp_levels = [tp1, tp2, tp3]
                 emoji = "🟢" if direction == "BUY" else "🔴"
+                analysis = get_analysis(pair, direction)
                 text = (
                     f"{emoji} <b>{direction}\n"
                     f"XAU/USD | GOLD</b>\n\n"
@@ -787,7 +899,7 @@ def webhook():
                     f"✅ TP2 {tp2:.2f}\n"
                     f"✅ TP3 {tp3:.2f}\n"
                     f"🚫 SL {sl:.2f}\n\n"
-                    f"(Use Appropriate Lot Sizes & Any question message us 😊)"
+                    f"💡 {analysis}"
                 )
             else:
                 if direction == "BUY":
@@ -803,13 +915,14 @@ def webhook():
                 entry_mid = price
                 tp_levels = [tp1]
                 emoji = "🟢" if direction == "BUY" else "🔴"
+                analysis = get_analysis(pair, direction)
                 text = (
                     f"{emoji} <b>{direction}\n"
                     f"BTC/USD | BITCOIN</b>\n\n"
                     f"ENTRY : {entry_low:,} – {entry_high:,}\n\n"
                     f"✅ TP1 {tp1:,}\n"
                     f"🚫 SL {sl:,}\n\n"
-                    f"(Use Appropriate Lot Sizes)"
+                    f"💡 {analysis}"
                 )
 
             signal_ids = send_signal_with_chart(text, pair)
