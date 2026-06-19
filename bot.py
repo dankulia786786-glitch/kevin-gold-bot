@@ -530,8 +530,18 @@ def get_gbpusd_rate():
 def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
     """Overlay profit info directly onto the live chart image — one combined image"""
     try:
-        gbpusd     = get_gbpusd_rate()
-        profit_gbp = profit_usd * gbpusd
+        # Fixed pips per TP level for Gold and Bitcoin
+        pips_map = {"TP1": 30, "TP2": 40, "TP3": 100}
+        pips = pips_map.get(close_type, 30)
+
+        # Randomised realistic GBP profit ranges per TP level
+        profit_ranges = {
+            "TP1": (110, 165),
+            "TP2": (170, 240),
+            "TP3": (280, 420),
+        }
+        lo, hi = profit_ranges.get(close_type, (110, 165))
+        profit_gbp = round(random.uniform(lo, hi), 2)
 
         # Use live chart as base, or dark fallback
         if chart_bytes:
@@ -540,56 +550,53 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
             img = Image.new("RGB", (800, 400), (10, 10, 15))
         W, H = img.size
 
-        # Dark semi-transparent overlay on bottom portion for text area
+        # Dark semi-transparent overlay on bottom portion
         overlay_h = int(H * 0.38)
         overlay_y = H - overlay_h
-        dark_band = Image.new("RGBA", (W, overlay_h), (0, 0, 0, 200))
+        dark_band = Image.new("RGBA", (W, overlay_h), (0, 0, 0, 210))
         img = img.convert("RGBA")
         img.paste(dark_band, (0, overlay_y), dark_band)
         img = img.convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # Gold top accent line on the dark band
+        # Gold accent line on top of dark band
         draw.rectangle([0, overlay_y, W, overlay_y + 5], fill=(212, 175, 55))
         # Gold bottom bar
         draw.rectangle([0, H - 6, W, H], fill=(212, 175, 55))
 
-        font_profit = find_font(bold=True, size=int(H * 0.18))
+        font_profit = find_font(bold=True, size=int(H * 0.17))
         font_label  = find_font(bold=True, size=int(H * 0.07))
         font_small  = find_font(bold=True, size=int(H * 0.055))
 
         tp_labels = {
-            "TP1": "TP1 SMASHED ✅",
-            "TP2": "TP2 SMASHED ✅✅",
-            "TP3": "ALL TARGETS HIT ✅✅✅",
+            "TP1": "TP1 SMASHED \u2705",
+            "TP2": "TP2 SMASHED \u2705\u2705",
+            "TP3": "ALL TARGETS HIT \u2705\u2705\u2705",
         }
         tp_label   = tp_labels.get(close_type, close_type)
-        profit_str = f"+£{profit_gbp:,.2f}"
-        lot_str    = "0.71 Lots  |  KEVIN BURNS & TEAM"
+        profit_str = f"+\u00a3{profit_gbp:,.2f}"
+        detail_str = f"0.71 Lots  |  + {pips} PIPS"
 
-        # TP label
+        # TP label — white
         bbox = draw.textbbox((0, 0), tp_label, font=font_label)
         tw = bbox[2] - bbox[0]
-        draw.text(((W - tw) // 2, overlay_y + 12), tp_label,
+        draw.text(((W - tw) // 2, overlay_y + 10), tp_label,
                   font=font_label, fill=(255, 255, 255))
 
         # Big green profit number
         bbox = draw.textbbox((0, 0), profit_str, font=font_profit)
         tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        py = overlay_y + int(overlay_h * 0.30)
-        # Shadow
+        py = overlay_y + int(overlay_h * 0.28)
         draw.text(((W - tw) // 2 + 3, py + 3), profit_str,
                   font=font_profit, fill=(0, 60, 0))
-        # Main
         draw.text(((W - tw) // 2, py), profit_str,
                   font=font_profit, fill=(0, 230, 80))
 
-        # Lot + author line
-        bbox = draw.textbbox((0, 0), lot_str, font=font_small)
+        # Lots | Pips line — gold
+        bbox = draw.textbbox((0, 0), detail_str, font=font_small)
         tw = bbox[2] - bbox[0]
-        draw.text(((W - tw) // 2, H - int(H * 0.10)),
-                  lot_str, font=font_small, fill=(212, 175, 55))
+        draw.text(((W - tw) // 2, H - int(H * 0.09)),
+                  detail_str, font=font_small, fill=(212, 175, 55))
 
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=92)
@@ -597,7 +604,7 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
         return buf.read()
     except Exception as e:
         logger.error(f"Profit overlay error: {e}")
-        return chart_bytes  # fallback — just send plain chart
+        return chart_bytes
 
 
 def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
