@@ -367,29 +367,12 @@ def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
     return None
 
 
-def add_fire_reaction(chat_id, message_id):
-    """Add 🔥 reaction to a message automatically"""
-    try:
-        payload = {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "reaction": [{"type": "emoji", "emoji": "🔥"}],
-            "is_big": False
-        }
-        requests.post(f"{TELEGRAM_URL}/setMessageReaction", json=payload, timeout=5)
-    except Exception as e:
-        logger.error(f"Reaction error: {e}")
-
-
 def send_message(text, reply_to_ids=None, keyboard=None):
     channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
     msg_ids  = {}
     for ch in channels:
         reply_to = (reply_to_ids or {}).get(ch)
         mid = send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
-        if mid:
-            msg_ids[ch] = mid
-    return msg_ids
         if mid:
             msg_ids[ch] = mid
     return msg_ids
