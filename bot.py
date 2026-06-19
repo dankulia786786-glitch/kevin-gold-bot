@@ -520,6 +520,16 @@ def mt5_close():
 
         logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
 
+        # BE close — silent, just clear state so next signal gets through
+        if close_type == "BE":
+            logger.info(f"BE close received for {pair} — clearing state silently")
+            with state_lock:
+                active_trades[pair] = None
+                save_state(active_trades)
+            with mt5_close_lock:
+                mt5_close_recent.clear()
+            return jsonify({"status": "be_cleared"})
+
         if close_type not in ("TP1", "TP2", "TP3", "SL"):
             return jsonify({"status": "ignored"})
 
