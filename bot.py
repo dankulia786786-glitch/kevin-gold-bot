@@ -316,6 +316,7 @@ def send_signal_with_chart(text, pair):
             mid = send_to_channel(ch, text)
         if mid:
             msg_ids[ch] = mid
+            add_fire_reaction(ch, mid)
     return msg_ids
 
 
@@ -367,7 +368,21 @@ def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
     return None
 
 
-def send_message(text, reply_to_ids=None, keyboard=None):
+def add_fire_reaction(chat_id, message_id):
+    """Add 🔥 reaction to a message automatically"""
+    try:
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reaction": [{"type": "emoji", "emoji": "🔥"}],
+            "is_big": False
+        }
+        requests.post(f"{TELEGRAM_URL}/setMessageReaction", json=payload, timeout=5)
+    except Exception as e:
+        logger.error(f"Reaction error: {e}")
+
+
+
     channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
     msg_ids  = {}
     for ch in channels:
@@ -637,6 +652,9 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
                 if not r.json().get("ok"):
                     logger.error(f"Combined image rejected: {r.json()}")
                     send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
+                else:
+                    mid = r.json()["result"]["message_id"]
+                    add_fire_reaction(ch, mid)
             else:
                 send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
     except Exception as e:
@@ -729,7 +747,10 @@ def mt5_close():
         if close_type in ("TP1", "TP2", "TP3") and profit != 0:
             send_profit_card(pair, close_type, profit, text, signal_ids, keyboard)
         else:
-            send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+            mids = send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+            # Add 🔥 reaction to SL message too
+            for ch, mid in mids.items():
+                add_fire_reaction(ch, mid)
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error(f"mt5_close error: {e}")
