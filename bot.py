@@ -504,6 +504,117 @@ def send_sl_message(pair, signal_ids):
     send_message(text, reply_to_ids=signal_ids)
 
 
+# ─── PROFIT CARD IMAGE ───────────────────────────────────────────────────────
+def get_gbpusd_rate():
+    try:
+        r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5)
+        if r.status_code == 200:
+            rate = float(r.json()["rates"]["GBP"])
+            if 0.5 < rate < 1.5:
+                return rate
+    except Exception:
+        pass
+    try:
+        td_key = os.environ.get("TWELVE_DATA_KEY", "")
+        if td_key:
+            r = requests.get(f"https://api.twelvedata.com/price?symbol=GBP/USD&apikey={td_key}", timeout=5)
+            if r.status_code == 200:
+                rate = float(r.json().get("price", 0))
+                if 0.5 < rate < 1.5:
+                    return rate
+    except Exception:
+        pass
+    return 0.79  # fallback
+
+
+def generate_profit_card(pair, close_type, profit_usd):
+    try:
+        gbpusd     = get_gbpusd_rate()
+        profit_gbp = profit_usd * gbpusd
+        W, H       = 1080, 540
+        img        = Image.new("RGB", (W, H), (10, 10, 15))
+        overlay    = Image.new("RGB", (W, H), (0, 40, 10))
+        img        = Image.blend(img, overlay, 0.15)
+        draw       = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, W, 12], fill=(212, 175, 55))
+        draw.rectangle([0, H - 12, W, H], fill=(212, 175, 55))
+
+        pair_label = "XAU/USD | GOLD" if pair == "XAUUSD" else "BTC/USD | BITCOIN"
+        tp_labels  = {
+            "TP1": "TP1 SMASHED ✅",
+            "TP2": "TP2 SMASHED ✅✅",
+            "TP3": "ALL TARGETS HIT ✅✅✅",
+        }
+        tp_label = tp_labels.get(close_type, close_type)
+
+        font_large  = find_font(bold=True, size=110)
+        font_medium = find_font(bold=True, size=52)
+        font_small  = find_font(bold=True, size=38)
+
+        # Pair name
+        bbox = draw.textbbox((0, 0), pair_label, font=font_small)
+        draw.text(((W - (bbox[2]-bbox[0])) // 2, 40), pair_label, font=font_small, fill=(180, 180, 180))
+
+        # TP label
+        bbox = draw.textbbox((0, 0), tp_label, font=font_medium)
+        draw.text(((W - (bbox[2]-bbox[0])) // 2, 110), tp_label, font=font_medium, fill=(255, 255, 255))
+
+        # Gold divider
+        draw.line([(W//2 - 120, 185), (W//2 + 120, 185)], fill=(212, 175, 55), width=3)
+
+        # Big green profit
+        profit_str = f"+£{profit_gbp:,.2f}"
+        bbox = draw.textbbox((0, 0), profit_str, font=font_large)
+        draw.text(((W - (bbox[2]-bbox[0])) // 2 + 4, 204), profit_str, font=font_large, fill=(0, 80, 0))
+        draw.text(((W - (bbox[2]-bbox[0])) // 2, 200), profit_str, font=font_large, fill=(0, 220, 80))
+
+        # Lot size
+        lot_str = "0.71 Lots"
+        bbox = draw.textbbox((0, 0), lot_str, font=font_small)
+        draw.text(((W - (bbox[2]-bbox[0])) // 2, 360), lot_str, font=font_small, fill=(180, 180, 180))
+
+        # Gold divider
+        draw.line([(W//2 - 80, 415), (W//2 + 80, 415)], fill=(212, 175, 55), width=3)
+
+        # Author
+        author = "KEVIN BURNS & TEAM"
+        bbox = draw.textbbox((0, 0), author, font=font_small)
+        draw.text(((W - (bbox[2]-bbox[0])) // 2, 430), author, font=font_small, fill=(212, 175, 55))
+
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=92)
+        buf.seek(0)
+        return buf.read()
+    except Exception as e:
+        logger.error(f"Profit card error: {e}")
+        return None
+
+
+def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
+    try:
+        card     = generate_profit_card(pair, close_type, abs(profit_usd))
+        channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+        for ch in channels:
+            reply_to = (signal_ids or {}).get(ch)
+            if card:
+                files   = {"photo": ("profit.jpg", card, "image/jpeg")}
+                payload = {"chat_id": ch, "caption": text, "parse_mode": "HTML"}
+                if reply_to:
+                    payload["reply_to_message_id"] = reply_to
+                if keyboard:
+                    payload["reply_markup"] = json.dumps(keyboard)
+                r = requests.post(f"{TELEGRAM_URL}/sendPhoto",
+                                  files=files, data=payload, timeout=15)
+                if not r.json().get("ok"):
+                    logger.error(f"Profit card rejected: {r.json()}")
+                    send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
+            else:
+                send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
+    except Exception as e:
+        logger.error(f"send_profit_card error: {e}")
+        send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+
+
 # ─── MT5 CLOSE ENDPOINT ──────────────────────────────────────────────────────
 mt5_close_recent = {}
 mt5_close_lock   = threading.Lock()
@@ -585,7 +696,11 @@ def mt5_close():
                 active_trades[pair] = None
                 save_state(active_trades)
 
-        send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+        # Send profit card image + text for TPs, plain text for SL
+        if close_type in ("TP1", "TP2", "TP3") and profit != 0:
+            send_profit_card(pair, close_type, profit, text, signal_ids, keyboard)
+        else:
+            send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error(f"mt5_close error: {e}")
