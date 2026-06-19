@@ -593,9 +593,27 @@ def generate_profit_card(pair, close_type, profit_usd):
 def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
     try:
         card     = generate_profit_card(pair, close_type, abs(profit_usd))
+        chart    = get_chart_image(pair)  # live TradingView chart screenshot
         channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
         for ch in channels:
             reply_to = (signal_ids or {}).get(ch)
+
+            # Step 1 — Send live chart screenshot (no caption, just the chart)
+            if chart:
+                try:
+                    files   = {"photo": ("chart.jpg", chart, "image/jpeg")}
+                    payload = {"chat_id": ch}
+                    if reply_to:
+                        payload["reply_to_message_id"] = reply_to
+                    r = requests.post(f"{TELEGRAM_URL}/sendPhoto",
+                                      files=files, data=payload, timeout=15)
+                    if r.json().get("ok"):
+                        # Use chart message as the new reply target
+                        reply_to = r.json()["result"]["message_id"]
+                except Exception as e:
+                    logger.error(f"Chart send error: {e}")
+
+            # Step 2 — Send profit card with TP text + JOIN button
             if card:
                 files   = {"photo": ("profit.jpg", card, "image/jpeg")}
                 payload = {"chat_id": ch, "caption": text, "parse_mode": "HTML"}
