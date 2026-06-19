@@ -530,16 +530,22 @@ def get_gbpusd_rate():
 def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
     """Overlay profit info directly onto the live chart image — one combined image"""
     try:
-        # Fixed pips per TP level for Gold and Bitcoin
-        pips_map = {"TP1": 30, "TP2": 40, "TP3": 100}
+        # Fixed pips per TP level — Gold and Bitcoin
+        if pair == "BTCUSD":
+            pips_map = {"TP1": 100, "TP2": 100, "TP3": 100}
+            profit_ranges = {
+                "TP1": (75, 107),
+                "TP2": (75, 107),
+                "TP3": (75, 107),
+            }
+        else:
+            pips_map = {"TP1": 30, "TP2": 40, "TP3": 100}
+            profit_ranges = {
+                "TP1": (110, 165),
+                "TP2": (170, 240),
+                "TP3": (280, 420),
+            }
         pips = pips_map.get(close_type, 30)
-
-        # Randomised realistic GBP profit ranges per TP level
-        profit_ranges = {
-            "TP1": (110, 165),
-            "TP2": (170, 240),
-            "TP3": (280, 420),
-        }
         lo, hi = profit_ranges.get(close_type, (110, 165))
         profit_gbp = round(random.uniform(lo, hi), 2)
 
@@ -568,11 +574,16 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
         font_label  = find_font(bold=True, size=int(H * 0.07))
         font_small  = find_font(bold=True, size=int(H * 0.055))
 
-        tp_labels = {
-            "TP1": "TP1 SMASHED \u2705",
-            "TP2": "TP2 SMASHED \u2705\u2705",
-            "TP3": "ALL TARGETS HIT \u2705\u2705\u2705",
-        }
+        if pair == "BTCUSD":
+            tp_labels = {
+                "TP1": "ALL TARGETS HIT \u2705\u2705\u2705",
+            }
+        else:
+            tp_labels = {
+                "TP1": "TP1 SMASHED \u2705",
+                "TP2": "TP2 SMASHED \u2705\u2705",
+                "TP3": "ALL TARGETS HIT \u2705\u2705\u2705",
+            }
         tp_label   = tp_labels.get(close_type, close_type)
         profit_str = f"+\u00a3{profit_gbp:,.2f}"
         detail_str = f"0.71 Lots  |  + {pips} PIPS"
