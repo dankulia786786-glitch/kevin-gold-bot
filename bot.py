@@ -527,95 +527,88 @@ def get_gbpusd_rate():
     return 0.79  # fallback
 
 
-def generate_profit_card(pair, close_type, profit_usd):
+def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
+    """Overlay profit info directly onto the live chart image — one combined image"""
     try:
         gbpusd     = get_gbpusd_rate()
         profit_gbp = profit_usd * gbpusd
-        W, H       = 1080, 540
-        img        = Image.new("RGB", (W, H), (10, 10, 15))
-        overlay    = Image.new("RGB", (W, H), (0, 40, 10))
-        img        = Image.blend(img, overlay, 0.15)
-        draw       = ImageDraw.Draw(img)
-        draw.rectangle([0, 0, W, 12], fill=(212, 175, 55))
-        draw.rectangle([0, H - 12, W, H], fill=(212, 175, 55))
 
-        pair_label = "XAU/USD | GOLD" if pair == "XAUUSD" else "BTC/USD | BITCOIN"
-        tp_labels  = {
+        # Use live chart as base, or dark fallback
+        if chart_bytes:
+            img = Image.open(BytesIO(chart_bytes)).convert("RGB")
+        else:
+            img = Image.new("RGB", (800, 400), (10, 10, 15))
+        W, H = img.size
+
+        # Dark semi-transparent overlay on bottom portion for text area
+        overlay_h = int(H * 0.38)
+        overlay_y = H - overlay_h
+        dark_band = Image.new("RGBA", (W, overlay_h), (0, 0, 0, 200))
+        img = img.convert("RGBA")
+        img.paste(dark_band, (0, overlay_y), dark_band)
+        img = img.convert("RGB")
+        draw = ImageDraw.Draw(img)
+
+        # Gold top accent line on the dark band
+        draw.rectangle([0, overlay_y, W, overlay_y + 5], fill=(212, 175, 55))
+        # Gold bottom bar
+        draw.rectangle([0, H - 6, W, H], fill=(212, 175, 55))
+
+        font_profit = find_font(bold=True, size=int(H * 0.18))
+        font_label  = find_font(bold=True, size=int(H * 0.07))
+        font_small  = find_font(bold=True, size=int(H * 0.055))
+
+        tp_labels = {
             "TP1": "TP1 SMASHED ✅",
             "TP2": "TP2 SMASHED ✅✅",
             "TP3": "ALL TARGETS HIT ✅✅✅",
         }
-        tp_label = tp_labels.get(close_type, close_type)
-
-        font_large  = find_font(bold=True, size=110)
-        font_medium = find_font(bold=True, size=52)
-        font_small  = find_font(bold=True, size=38)
-
-        # Pair name
-        bbox = draw.textbbox((0, 0), pair_label, font=font_small)
-        draw.text(((W - (bbox[2]-bbox[0])) // 2, 40), pair_label, font=font_small, fill=(180, 180, 180))
+        tp_label   = tp_labels.get(close_type, close_type)
+        profit_str = f"+£{profit_gbp:,.2f}"
+        lot_str    = "0.71 Lots  |  KEVIN BURNS & TEAM"
 
         # TP label
-        bbox = draw.textbbox((0, 0), tp_label, font=font_medium)
-        draw.text(((W - (bbox[2]-bbox[0])) // 2, 110), tp_label, font=font_medium, fill=(255, 255, 255))
+        bbox = draw.textbbox((0, 0), tp_label, font=font_label)
+        tw = bbox[2] - bbox[0]
+        draw.text(((W - tw) // 2, overlay_y + 12), tp_label,
+                  font=font_label, fill=(255, 255, 255))
 
-        # Gold divider
-        draw.line([(W//2 - 120, 185), (W//2 + 120, 185)], fill=(212, 175, 55), width=3)
+        # Big green profit number
+        bbox = draw.textbbox((0, 0), profit_str, font=font_profit)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        py = overlay_y + int(overlay_h * 0.30)
+        # Shadow
+        draw.text(((W - tw) // 2 + 3, py + 3), profit_str,
+                  font=font_profit, fill=(0, 60, 0))
+        # Main
+        draw.text(((W - tw) // 2, py), profit_str,
+                  font=font_profit, fill=(0, 230, 80))
 
-        # Big green profit
-        profit_str = f"+£{profit_gbp:,.2f}"
-        bbox = draw.textbbox((0, 0), profit_str, font=font_large)
-        draw.text(((W - (bbox[2]-bbox[0])) // 2 + 4, 204), profit_str, font=font_large, fill=(0, 80, 0))
-        draw.text(((W - (bbox[2]-bbox[0])) // 2, 200), profit_str, font=font_large, fill=(0, 220, 80))
-
-        # Lot size
-        lot_str = "0.71 Lots"
+        # Lot + author line
         bbox = draw.textbbox((0, 0), lot_str, font=font_small)
-        draw.text(((W - (bbox[2]-bbox[0])) // 2, 360), lot_str, font=font_small, fill=(180, 180, 180))
-
-        # Gold divider
-        draw.line([(W//2 - 80, 415), (W//2 + 80, 415)], fill=(212, 175, 55), width=3)
-
-        # Author
-        author = "KEVIN BURNS & TEAM"
-        bbox = draw.textbbox((0, 0), author, font=font_small)
-        draw.text(((W - (bbox[2]-bbox[0])) // 2, 430), author, font=font_small, fill=(212, 175, 55))
+        tw = bbox[2] - bbox[0]
+        draw.text(((W - tw) // 2, H - int(H * 0.10)),
+                  lot_str, font=font_small, fill=(212, 175, 55))
 
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=92)
         buf.seek(0)
         return buf.read()
     except Exception as e:
-        logger.error(f"Profit card error: {e}")
-        return None
+        logger.error(f"Profit overlay error: {e}")
+        return chart_bytes  # fallback — just send plain chart
 
 
 def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
     try:
-        card     = generate_profit_card(pair, close_type, abs(profit_usd))
-        chart    = get_chart_image(pair)  # live TradingView chart screenshot
+        chart   = get_chart_image(pair)
+        combined = generate_profit_overlay(pair, close_type, abs(profit_usd), chart)
         channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
         for ch in channels:
             reply_to = (signal_ids or {}).get(ch)
-
-            # Step 1 — Send live chart screenshot (no caption, just the chart)
-            if chart:
-                try:
-                    files   = {"photo": ("chart.jpg", chart, "image/jpeg")}
-                    payload = {"chat_id": ch}
-                    if reply_to:
-                        payload["reply_to_message_id"] = reply_to
-                    r = requests.post(f"{TELEGRAM_URL}/sendPhoto",
-                                      files=files, data=payload, timeout=15)
-                    if r.json().get("ok"):
-                        # Use chart message as the new reply target
-                        reply_to = r.json()["result"]["message_id"]
-                except Exception as e:
-                    logger.error(f"Chart send error: {e}")
-
-            # Step 2 — Send profit card with TP text + JOIN button
-            if card:
-                files   = {"photo": ("profit.jpg", card, "image/jpeg")}
+            if combined:
+                files   = {"photo": ("result.jpg", combined, "image/jpeg")}
                 payload = {"chat_id": ch, "caption": text, "parse_mode": "HTML"}
                 if reply_to:
                     payload["reply_to_message_id"] = reply_to
@@ -624,7 +617,7 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
                 r = requests.post(f"{TELEGRAM_URL}/sendPhoto",
                                   files=files, data=payload, timeout=15)
                 if not r.json().get("ok"):
-                    logger.error(f"Profit card rejected: {r.json()}")
+                    logger.error(f"Combined image rejected: {r.json()}")
                     send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
             else:
                 send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
