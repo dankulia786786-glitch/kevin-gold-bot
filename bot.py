@@ -316,7 +316,6 @@ def send_signal_with_chart(text, pair):
             mid = send_to_channel(ch, text)
         if mid:
             msg_ids[ch] = mid
-            add_fire_reaction(ch, mid)
     return msg_ids
 
 
@@ -382,12 +381,15 @@ def add_fire_reaction(chat_id, message_id):
         logger.error(f"Reaction error: {e}")
 
 
-
+def send_message(text, reply_to_ids=None, keyboard=None):
     channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
     msg_ids  = {}
     for ch in channels:
         reply_to = (reply_to_ids or {}).get(ch)
         mid = send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
+        if mid:
+            msg_ids[ch] = mid
+    return msg_ids
         if mid:
             msg_ids[ch] = mid
     return msg_ids
@@ -652,9 +654,6 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
                 if not r.json().get("ok"):
                     logger.error(f"Combined image rejected: {r.json()}")
                     send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
-                else:
-                    mid = r.json()["result"]["message_id"]
-                    add_fire_reaction(ch, mid)
             else:
                 send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
     except Exception as e:
@@ -747,9 +746,7 @@ def mt5_close():
         if close_type in ("TP1", "TP2", "TP3") and profit != 0:
             send_profit_card(pair, close_type, profit, text, signal_ids, keyboard)
         else:
-            mids = send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
-            for ch, mid in (mids or {}).items():
-                add_fire_reaction(ch, mid)
+            send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error(f"mt5_close error: {e}")
