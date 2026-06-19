@@ -748,8 +748,7 @@ def mt5_close():
             send_profit_card(pair, close_type, profit, text, signal_ids, keyboard)
         else:
             mids = send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
-            # Add 🔥 reaction to SL message too
-            for ch, mid in mids.items():
+            for ch, mid in (mids or {}).items():
                 add_fire_reaction(ch, mid)
         return jsonify({"status": "ok"})
     except Exception as e:
