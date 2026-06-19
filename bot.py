@@ -279,7 +279,7 @@ def get_chart_image(pair):
         url = (
             f"https://api.chart-img.com/v1/tradingview/advanced-chart"
             f"?symbol={symbol}&interval=5m&theme=dark"
-            f"&studies=RSI,Volume"
+            f"&studies=MASimple@tv-basicstudies,MASimple@tv-basicstudies,MASimple@tv-basicstudies,BB@tv-basicstudies,RSI@tv-basicstudies,MACD@tv-basicstudies,Volume@tv-basicstudies"
             f"&key={CHART_IMG_KEY}"
         )
         r = requests.get(url, timeout=10)
@@ -528,56 +528,43 @@ def get_gbpusd_rate():
 
 
 def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
-    """Overlay profit info directly onto the live chart image — one combined image"""
+    """Add profit band BELOW the chart — price action stays fully visible"""
     try:
         # Fixed pips per TP level — Gold and Bitcoin
         if pair == "BTCUSD":
             pips_map = {"TP1": 100, "TP2": 100, "TP3": 100}
-            profit_ranges = {
-                "TP1": (75, 107),
-                "TP2": (75, 107),
-                "TP3": (75, 107),
-            }
+            profit_ranges = {"TP1": (75, 107), "TP2": (75, 107), "TP3": (75, 107)}
         else:
             pips_map = {"TP1": 30, "TP2": 40, "TP3": 100}
-            profit_ranges = {
-                "TP1": (110, 165),
-                "TP2": (170, 240),
-                "TP3": (280, 420),
-            }
+            profit_ranges = {"TP1": (110, 165), "TP2": (170, 240), "TP3": (280, 420)}
+
         pips = pips_map.get(close_type, 30)
         lo, hi = profit_ranges.get(close_type, (110, 165))
         profit_gbp = round(random.uniform(lo, hi), 2)
 
-        # Use live chart as base, or dark fallback
+        # Load chart image
         if chart_bytes:
-            img = Image.open(BytesIO(chart_bytes)).convert("RGB")
+            chart_img = Image.open(BytesIO(chart_bytes)).convert("RGB")
         else:
-            img = Image.new("RGB", (800, 400), (10, 10, 15))
-        W, H = img.size
+            chart_img = Image.new("RGB", (800, 400), (10, 10, 15))
+        CW, CH = chart_img.size
 
-        # Dark semi-transparent overlay on bottom portion
-        overlay_h = int(H * 0.38)
-        overlay_y = H - overlay_h
-        dark_band = Image.new("RGBA", (W, overlay_h), (0, 0, 0, 210))
-        img = img.convert("RGBA")
-        img.paste(dark_band, (0, overlay_y), dark_band)
-        img = img.convert("RGB")
-        draw = ImageDraw.Draw(img)
+        # Create profit band (height = 22% of chart height)
+        band_h = int(CH * 0.22)
+        band = Image.new("RGB", (CW, band_h), (8, 8, 12))
+        draw = ImageDraw.Draw(band)
 
-        # Gold accent line on top of dark band
-        draw.rectangle([0, overlay_y, W, overlay_y + 5], fill=(212, 175, 55))
-        # Gold bottom bar
-        draw.rectangle([0, H - 6, W, H], fill=(212, 175, 55))
+        # Gold top line
+        draw.rectangle([0, 0, CW, 5], fill=(212, 175, 55))
+        # Gold bottom line
+        draw.rectangle([0, band_h - 5, CW, band_h], fill=(212, 175, 55))
 
-        font_profit = find_font(bold=True, size=int(H * 0.17))
-        font_label  = find_font(bold=True, size=int(H * 0.07))
-        font_small  = find_font(bold=True, size=int(H * 0.055))
+        font_profit = find_font(bold=True, size=int(band_h * 0.52))
+        font_label  = find_font(bold=True, size=int(band_h * 0.22))
+        font_small  = find_font(bold=True, size=int(band_h * 0.17))
 
         if pair == "BTCUSD":
-            tp_labels = {
-                "TP1": "ALL TARGETS HIT \u2705\u2705\u2705",
-            }
+            tp_labels = {"TP1": "ALL TARGETS HIT \u2705\u2705\u2705"}
         else:
             tp_labels = {
                 "TP1": "TP1 SMASHED \u2705",
@@ -588,29 +575,31 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
         profit_str = f"+\u00a3{profit_gbp:,.2f}"
         detail_str = f"0.71 Lots  |  + {pips} PIPS"
 
-        # TP label — white
+        # TP label
         bbox = draw.textbbox((0, 0), tp_label, font=font_label)
         tw = bbox[2] - bbox[0]
-        draw.text(((W - tw) // 2, overlay_y + 10), tp_label,
-                  font=font_label, fill=(255, 255, 255))
+        draw.text(((CW - tw) // 2, 8), tp_label, font=font_label, fill=(255, 255, 255))
 
-        # Big green profit number
+        # Big green profit
         bbox = draw.textbbox((0, 0), profit_str, font=font_profit)
         tw = bbox[2] - bbox[0]
-        py = overlay_y + int(overlay_h * 0.28)
-        draw.text(((W - tw) // 2 + 3, py + 3), profit_str,
-                  font=font_profit, fill=(0, 60, 0))
-        draw.text(((W - tw) // 2, py), profit_str,
-                  font=font_profit, fill=(0, 230, 80))
+        py = int(band_h * 0.28)
+        draw.text(((CW - tw) // 2 + 3, py + 3), profit_str, font=font_profit, fill=(0, 60, 0))
+        draw.text(((CW - tw) // 2, py), profit_str, font=font_profit, fill=(0, 230, 80))
 
-        # Lots | Pips line — gold
+        # Lots | Pips
         bbox = draw.textbbox((0, 0), detail_str, font=font_small)
         tw = bbox[2] - bbox[0]
-        draw.text(((W - tw) // 2, H - int(H * 0.09)),
-                  detail_str, font=font_small, fill=(212, 175, 55))
+        draw.text(((CW - tw) // 2, band_h - int(band_h * 0.22)), detail_str,
+                  font=font_small, fill=(212, 175, 55))
+
+        # Stack: chart on top, profit band below
+        combined = Image.new("RGB", (CW, CH + band_h))
+        combined.paste(chart_img, (0, 0))
+        combined.paste(band, (0, CH))
 
         buf = BytesIO()
-        img.save(buf, format="JPEG", quality=92)
+        combined.save(buf, format="JPEG", quality=92)
         buf.seek(0)
         return buf.read()
     except Exception as e:
