@@ -519,6 +519,17 @@ def get_analysis(pair, direction):
     return random.choice(pool)
 
 
+def get_price_gold():
+    try:
+        td_key = os.environ.get("TWELVE_DATA_KEY", "")
+        if td_key:
+            r = requests.get(f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={td_key}", timeout=5)
+            if r.status_code == 200:
+                p = float(r.json().get("price", 0))
+                if p > 3000:
+                    return p
+    except Exception:
+        pass
     try:
         r = requests.get("https://api.gold-api.com/price/XAU", timeout=6)
         if r.status_code == 200:
@@ -720,9 +731,10 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
 
 def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
     try:
-        chart   = get_chart_image(pair)
+        chart    = get_chart_image(pair)
         combined = generate_profit_overlay(pair, close_type, abs(profit_usd), chart)
         channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+        sent_image = None
         for ch in channels:
             reply_to = (signal_ids or {}).get(ch)
             if combined:
@@ -734,11 +746,36 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
                     payload["reply_markup"] = json.dumps(keyboard)
                 r = requests.post(f"{TELEGRAM_URL}/sendPhoto",
                                   files=files, data=payload, timeout=15)
-                if not r.json().get("ok"):
+                if r.json().get("ok"):
+                    sent_image = combined
+                else:
                     logger.error(f"Combined image rejected: {r.json()}")
                     send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
             else:
                 send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
+
+        # Forward profit card image to VIP bot for incomplete leads
+        if sent_image:
+            try:
+                vip_url = os.environ.get("VIP_BOT_URL", "")
+                if vip_url:
+                    # Extract profit string from the overlay for caption
+                    if pair == "BTCUSD":
+                        ranges = {"TP1": (75, 107)}
+                    else:
+                        ranges = {"TP1": (110, 165), "TP2": (170, 240), "TP3": (280, 420)}
+                    lo, hi = ranges.get(close_type, (110, 165))
+                    profit_gbp = round(random.uniform(lo, hi), 2)
+                    profit_str = f"+£{profit_gbp:,.2f}"
+                    requests.post(
+                        f"{vip_url}/forward_tp",
+                        files={"image": ("result.jpg", sent_image, "image/jpeg")},
+                        data={"close_type": close_type, "pair": pair, "profit_str": profit_str},
+                        timeout=10
+                    )
+            except Exception as e:
+                logger.error(f"VIP forward error: {e}")
+
     except Exception as e:
         logger.error(f"send_profit_card error: {e}")
         send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
