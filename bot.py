@@ -18,6 +18,7 @@ app = Flask(__name__)
 BOT_TOKEN  = os.environ.get("BOT_TOKEN")
 CHAT_ID    = os.environ.get("CHAT_ID")
 CHAT_ID_2  = os.environ.get("CHAT_ID_2", "")
+CHAT_ID_3  = os.environ.get("CHAT_ID_3", "")
 OWNER_ID   = os.environ.get("OWNER_ID", "8842842151")
 
 STATE_FILES = [
@@ -243,7 +244,7 @@ def send_daily_quote():
         quote = pick_daily_quote()
         bg_path = pick_daily_bg()
         image_bytes = generate_quote_image(quote, bg_path=bg_path)
-        channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+        channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
         caption = "🔔 <b>Unmute &amp; Pin this channel to never miss a signal!</b>"
         for ch in channels:
             send_photo_to_channel(ch, image_bytes, caption)
@@ -306,7 +307,7 @@ def send_photo_to_channel(chat_id, photo_bytes, caption):
 
 
 def send_signal_with_chart(text, pair):
-    channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+    channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
     msg_ids  = {}
     chart    = get_chart_image(pair)
     for ch in channels:
@@ -368,7 +369,7 @@ def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
 
 
 def send_message(text, reply_to_ids=None, keyboard=None):
-    channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+    channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
     msg_ids  = {}
     for ch in channels:
         reply_to = (reply_to_ids or {}).get(ch)
@@ -733,7 +734,7 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
     try:
         chart    = get_chart_image(pair)
         combined = generate_profit_overlay(pair, close_type, abs(profit_usd), chart)
-        channels = [c for c in [CHAT_ID, CHAT_ID_2] if c]
+        channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
         sent_image = None
         for ch in channels:
             reply_to = (signal_ids or {}).get(ch)
@@ -1041,10 +1042,11 @@ def health():
         gold = active_trades.get("XAUUSD")
         btc  = active_trades.get("BTCUSD")
     ch2_info = f" | Channel 2: {CHAT_ID_2}" if CHAT_ID_2 else " | Channel 2: not set"
+    ch3_info = f" | Channel 3: {CHAT_ID_3}" if CHAT_ID_3 else " | Channel 3: not set"
     bg_found = sum(1 for f in QUOTE_BG_FILES if os.path.exists(os.path.join(QUOTE_BG_DIR, f)))
     return (
         f"Kevin Gold Signals Bot is running! ✅\n"
-        f"Channel 1: {CHAT_ID}{ch2_info}\n"
+        f"Channel 1: {CHAT_ID}{ch2_info}{ch3_info}\n"
         f"Gold trade active: {'Yes' if gold else 'No'}\n"
         f"Bitcoin trade active: {'Yes' if btc else 'No'}\n"
         f"MT5 EA handles: TP1, TP2, TP3, SL\n"
