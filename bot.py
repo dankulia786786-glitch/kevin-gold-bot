@@ -15,11 +15,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
-BOT_TOKEN  = os.environ.get("BOT_TOKEN")
-CHAT_ID    = os.environ.get("CHAT_ID")
-CHAT_ID_2  = os.environ.get("CHAT_ID_2", "")
-CHAT_ID_3  = os.environ.get("CHAT_ID_3", "")
-OWNER_ID   = os.environ.get("OWNER_ID", "8842842151")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+CHAT_ID_2 = os.environ.get("CHAT_ID_2", "")
+CHAT_ID_3 = os.environ.get("CHAT_ID_3", "")
+CHAT_ID_4 = os.environ.get("CHAT_ID_4", "")
+OWNER_ID = os.environ.get("OWNER_ID", "8842842151")
 
 STATE_FILES = [
     "/data/trade_state.json",
@@ -27,11 +28,16 @@ STATE_FILES = [
     "/data/trade_state_b2.json"
 ]
 
-TELEGRAM_URL   = f"https://api.telegram.org/bot{BOT_TOKEN}"
-CHART_IMG_KEY  = os.environ.get("CHART_IMG_KEY", "")
-state_lock     = threading.Lock()
+TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
+CHART_IMG_KEY = os.environ.get("CHART_IMG_KEY", "")
+state_lock = threading.Lock()
 
-# ─── DAILY MOTIVATIONAL QUOTE ────────────────────────────────────────────────
+
+def get_channels():
+    return [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3, CHAT_ID_4] if c]
+
+
+# === DAILY MOTIVATIONAL QUOTE ===
 QUOTE_AUTHOR = "Kevin Burns & Team"
 QUOTE_STATE_FILE = "/data/quote_state.json"
 
@@ -172,7 +178,7 @@ def find_font(bold=True, size=54):
         except Exception:
             continue
     if not _font_warning_logged:
-        logger.error("⚠️ NO BOLD FONT FOUND")
+        logger.error("NO BOLD FONT FOUND")
         _font_warning_logged = True
     return ImageFont.load_default()
 
@@ -184,13 +190,16 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
     else:
         img = Image.open(bg_path).convert("RGB")
         W, H = img.size
+
     overlay_dark = Image.new("RGB", (W, H), (0, 0, 0))
     img = Image.blend(img, overlay_dark, 0.18)
+
     band = Image.new("L", (W, H), 0)
     bdraw = ImageDraw.Draw(band)
     band_top = int(H * 0.30)
     band_bottom = int(H * 0.62)
     fade = int(H * 0.08)
+
     for y in range(max(0, band_top - fade), min(H, band_bottom + fade)):
         if y < band_top:
             alpha = int(190 * ((y - (band_top - fade)) / fade)) if fade else 190
@@ -200,16 +209,20 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
             alpha = 190
         alpha = max(0, min(190, alpha))
         bdraw.line([(0, y), (W, y)], fill=alpha)
+
     black = Image.new("RGB", (W, H), (0, 0, 0))
     img = Image.composite(black, img, band)
     draw = ImageDraw.Draw(img)
+
     draw.rectangle([0, 0, W, 10], fill=(212, 175, 55))
+
     quote_upper = quote.upper()
     font_size = 80
     max_width_chars = 16
     font_quote = find_font(bold=True, size=font_size)
     lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
     band_center = (band_top + band_bottom) // 2
+
     while True:
         line_height = int(font_size * 1.2)
         total_h = len(lines) * line_height
@@ -218,21 +231,26 @@ def generate_quote_image(quote, author=QUOTE_AUTHOR, bg_path=None):
         font_size -= 4
         font_quote = find_font(bold=True, size=font_size)
         lines = textwrap.fill(quote_upper, width=max_width_chars).split("\n")
+
     line_height = int(font_size * 1.2)
     total_h = len(lines) * line_height
     y = band_center - total_h // 2
+
     for line in lines:
         bbox = draw.textbbox((0, 0), line, font=font_quote)
         w = bbox[2] - bbox[0]
         draw.text(((W - w) // 2 + 4, y + 4), line, font=font_quote, fill=(0, 0, 0))
         draw.text(((W - w) // 2, y), line, font=font_quote, fill=(255, 255, 255))
         y += line_height
+
     draw.line([(W // 2 - 80, y + 35), (W // 2 + 80, y + 35)], fill=(212, 175, 55), width=5)
+
     font_author = find_font(bold=True, size=36)
     author_text = author.upper()
     bbox = draw.textbbox((0, 0), author_text, font=font_author)
     w = bbox[2] - bbox[0]
     draw.text(((W - w) // 2, y + 55), author_text, font=font_author, fill=(212, 175, 55))
+
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=90)
     buf.seek(0)
@@ -244,10 +262,12 @@ def send_daily_quote():
         quote = pick_daily_quote()
         bg_path = pick_daily_bg()
         image_bytes = generate_quote_image(quote, bg_path=bg_path)
-        channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
+        channels = get_channels()
         caption = "🔔 <b>Unmute &amp; Pin this channel to never miss a signal!</b>"
+
         for ch in channels:
             send_photo_to_channel(ch, image_bytes, caption)
+
         logger.info(f"Daily quote sent: {quote[:40]}...")
     except Exception as e:
         logger.error(f"Daily quote error: {e}")
@@ -259,6 +279,7 @@ def quote_scheduler():
         try:
             now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
             today_str = now.strftime("%Y-%m-%d")
+
             if now.hour == 8 and now.minute == 0:
                 state = get_quote_state()
                 if state.get("last_sent_date") != today_str:
@@ -268,13 +289,15 @@ def quote_scheduler():
                     save_quote_state(state)
         except Exception as e:
             logger.error(f"Quote scheduler error: {e}")
+
         time.sleep(30)
 
 
-# ─── CHART IMAGE ─────────────────────────────────────────────────────────────
+# === CHART IMAGE ===
 def get_chart_image(pair):
     if not CHART_IMG_KEY:
         return None
+
     try:
         symbol = "OANDA:XAUUSD" if pair == "XAUUSD" else "BITSTAMP:BTCUSD"
         url = (
@@ -283,61 +306,75 @@ def get_chart_image(pair):
             f"&studies=MASimple@tv-basicstudies,MASimple@tv-basicstudies,MASimple@tv-basicstudies,BB@tv-basicstudies,RSI@tv-basicstudies,MACD@tv-basicstudies,Volume@tv-basicstudies"
             f"&key={CHART_IMG_KEY}"
         )
+
         r = requests.get(url, timeout=10)
+
         if r.status_code == 200 and "image" in r.headers.get("content-type", ""):
             return r.content
+
         logger.warning(f"Chart image failed: {r.status_code}")
     except Exception as e:
         logger.error(f"Chart image error: {e}")
+
     return None
 
 
 def send_photo_to_channel(chat_id, photo_bytes, caption):
     try:
         files = {"photo": ("chart.png", photo_bytes, "image/png")}
-        data  = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
+        data = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
+
         r = requests.post(f"{TELEGRAM_URL}/sendPhoto", files=files, data=data, timeout=15)
         result = r.json()
+
         if result.get("ok"):
             return result["result"]["message_id"]
+
         logger.error(f"sendPhoto rejected: {result}")
     except Exception as e:
         logger.error(f"sendPhoto error: {e}")
+
     return None
 
 
 def send_signal_with_chart(text, pair):
-    channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
-    msg_ids  = {}
-    chart    = get_chart_image(pair)
+    channels = get_channels()
+    msg_ids = {}
+    chart = get_chart_image(pair)
+
     for ch in channels:
         if chart:
             mid = send_photo_to_channel(ch, chart, text)
         else:
             mid = send_to_channel(ch, text)
+
         if mid:
             msg_ids[ch] = mid
+
     return msg_ids
 
 
-# ─── STATE ───────────────────────────────────────────────────────────────────
+# === STATE ===
 def load_state():
     for path in STATE_FILES:
         try:
             if os.path.exists(path):
                 with open(path, "r") as f:
                     data = json.load(f)
+
                 if isinstance(data, dict) and "XAUUSD" in data:
                     logger.info(f"State loaded from {path}")
                     return data
         except Exception as e:
             logger.warning(f"State load failed {path}: {e}")
+
     return {"XAUUSD": None, "BTCUSD": None}
 
 
 def save_state(state):
     os.makedirs("/data", exist_ok=True)
     payload = json.dumps(state)
+
     for path in STATE_FILES:
         try:
             with open(path, "w") as f:
@@ -350,45 +387,60 @@ active_trades = load_state()
 last_entry_time = {}
 
 
-# ─── TELEGRAM ────────────────────────────────────────────────────────────────
+# === TELEGRAM ===
 def send_to_channel(chat_id, text, reply_to=None, keyboard=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+
     if reply_to:
         payload["reply_to_message_id"] = reply_to
+
     if keyboard:
         payload["reply_markup"] = json.dumps(keyboard)
+
     try:
         r = requests.post(f"{TELEGRAM_URL}/sendMessage", json=payload, timeout=10)
         data = r.json()
+
         if data.get("ok"):
             return data["result"]["message_id"]
+
         logger.error(f"Telegram rejected: {data}")
     except Exception as e:
         logger.error(f"Send error: {e}")
+
     return None
 
 
 def send_message(text, reply_to_ids=None, keyboard=None):
-    channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
-    msg_ids  = {}
+    channels = get_channels()
+    msg_ids = {}
+
     for ch in channels:
         reply_to = (reply_to_ids or {}).get(ch)
         mid = send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
+
         if mid:
             msg_ids[ch] = mid
+
     return msg_ids
 
 
 def notify_owner(text):
     try:
-        requests.post(f"{TELEGRAM_URL}/sendMessage", json={
-            "chat_id": OWNER_ID, "text": text, "parse_mode": "HTML"
-        }, timeout=10)
+        requests.post(
+            f"{TELEGRAM_URL}/sendMessage",
+            json={
+                "chat_id": OWNER_ID,
+                "text": text,
+                "parse_mode": "HTML"
+            },
+            timeout=10
+        )
     except Exception as e:
         logger.error(f"Owner notify error: {e}")
 
 
-# ─── JOIN BUTTON — routes to VIP onboarding bot ──────────────────────────────
+# === JOIN BUTTON ===
 JOIN_BUTTON = {
     "inline_keyboard": [[{
         "text": "👉 JOIN PM NOW FOR FREE! 👈",
@@ -397,32 +449,55 @@ JOIN_BUTTON = {
 }
 
 
-# ─── PRICE FETCHING ──────────────────────────────────────────────────────────
+# === PRICE FETCHING ===
 def get_live_indicators(pair):
     try:
         td_key = os.environ.get("TWELVE_DATA_KEY", "")
+
         if not td_key:
             return None
+
         symbol = "XAU/USD" if pair == "XAUUSD" else "BTC/USD"
-        r1 = requests.get(f"https://api.twelvedata.com/ema?symbol={symbol}&interval=1h&time_period=50&outputsize=1&apikey={td_key}", timeout=6)
+
+        r1 = requests.get(
+            f"https://api.twelvedata.com/ema?symbol={symbol}&interval=1h&time_period=50&outputsize=1&apikey={td_key}",
+            timeout=6
+        )
         ema50 = None
+
         if r1.status_code == 200:
             val = r1.json().get("values", [{}])[0].get("ema")
-            if val: ema50 = round(float(val), 2)
-        r2 = requests.get(f"https://api.twelvedata.com/rsi?symbol={symbol}&interval=1h&time_period=14&outputsize=1&apikey={td_key}", timeout=6)
+            if val:
+                ema50 = round(float(val), 2)
+
+        r2 = requests.get(
+            f"https://api.twelvedata.com/rsi?symbol={symbol}&interval=1h&time_period=14&outputsize=1&apikey={td_key}",
+            timeout=6
+        )
         rsi = None
+
         if r2.status_code == 200:
             val = r2.json().get("values", [{}])[0].get("rsi")
-            if val: rsi = round(float(val), 1)
-        r3 = requests.get(f"https://api.twelvedata.com/price?symbol={symbol}&apikey={td_key}", timeout=5)
+            if val:
+                rsi = round(float(val), 1)
+
+        r3 = requests.get(
+            f"https://api.twelvedata.com/price?symbol={symbol}&apikey={td_key}",
+            timeout=5
+        )
         price = None
+
         if r3.status_code == 200:
             val = r3.json().get("price")
-            if val: price = round(float(val), 2)
+            if val:
+                price = round(float(val), 2)
+
         if ema50 and rsi and price:
             return {"ema50": ema50, "rsi": rsi, "price": price}
+
     except Exception as e:
         logger.error(f"Indicator fetch error: {e}")
+
     return None
 
 
@@ -432,7 +507,7 @@ def get_analysis(pair, direction):
 
     if indicators:
         ema50 = indicators["ema50"]
-        rsi   = indicators["rsi"]
+        rsi = indicators["rsi"]
         price = indicators["price"]
         above_ema = price > ema50
 
@@ -445,7 +520,7 @@ def get_analysis(pair, direction):
                 f"The 1H EMA50 at {ema50} is acting as dynamic support with price bouncing cleanly off it. Buyers are defending this zone.",
                 f"Price has formed a higher low structure with RSI at {rsi} confirming bullish momentum. Trend continuation to the upside.",
                 f"A strong rejection wick from a key demand zone signals institutional buying at this level. RSI at {rsi} supports the move.",
-                f"{pair_name} is trading above the 1H EMA50 at {ema50} — this level has flipped to support. London session momentum is to the upside.",
+                f"{pair_name} is trading above the 1H EMA50 at {ema50} and this level has flipped to support. London session momentum is to the upside.",
                 f"The Bollinger Bands are expanding upward with price leading the move and RSI at {rsi}. Momentum is clearly bullish.",
                 f"A bullish engulfing candle has formed at a key structure level. RSI at {rsi} gives plenty of room to run higher.",
                 f"Price has broken out of a consolidation range to the upside with RSI at {rsi} confirming the breakout. Targets are above.",
@@ -455,51 +530,50 @@ def get_analysis(pair, direction):
                 f"Price is pushing back into a key demand zone with RSI at {rsi} recovering from lows. Buyers appear to be stepping in.",
                 f"A liquidity sweep below recent lows has been completed with RSI at {rsi} turning up. This is a classic reversal setup.",
                 f"{pair_name} is forming a base near the 1H EMA50 at {ema50} with RSI at {rsi} building. Watch for a break higher.",
-                f"Price has found support at a key structural level with RSI at {rsi} and recovering. Risk-reward favours the buy here.",
+                f"Price has found support at a key structural level with RSI at {rsi} and recovering. Risk reward favours the buy here.",
             ]
-        else:  # SELL
+        else:
             pool = [
-                f"{pair_name} is trading below the 1H EMA50 at {ema50} with RSI at {rsi} and falling. Structure is bearish — sellers are in control.",
+                f"{pair_name} is trading below the 1H EMA50 at {ema50} with RSI at {rsi} and falling. Structure is bearish and sellers are in control.",
                 f"Price has rejected from a key resistance zone with RSI at {rsi} turning lower. The path of least resistance is down.",
                 f"{pair_name} has swept liquidity above a recent high and is now reversing lower. Smart money appears to be short from here.",
                 f"A bearish order block at {ema50} area has rejected price with RSI at {rsi} declining. Downside targets are in view.",
                 f"The 1H EMA50 at {ema50} is acting as dynamic resistance with price failing to break above it. Sellers are defending this zone.",
                 f"Price has formed a lower high structure with RSI at {rsi} confirming bearish momentum. Trend continuation to the downside.",
                 f"A strong rejection wick from a key supply zone signals institutional selling at this level. RSI at {rsi} supports the move.",
-                f"{pair_name} is trading below the 1H EMA50 at {ema50} — this level has flipped to resistance. Pressure remains to the downside.",
+                f"{pair_name} is trading below the 1H EMA50 at {ema50} and this level has flipped to resistance. Pressure remains to the downside.",
                 f"The Bollinger Bands are expanding downward with price leading and RSI at {rsi}. Momentum is clearly bearish.",
                 f"A bearish engulfing candle has formed at a key resistance level. RSI at {rsi} confirms sellers are in control.",
                 f"Price has broken down from a consolidation range with RSI at {rsi} confirming the breakdown. Targets are below.",
                 f"MACD has crossed bearish on the 1H chart with price below the EMA50 at {ema50}. Both signals align for the sell.",
             ] if not above_ema else [
-                f"{pair_name} has failed to hold above the 1H EMA50 at {ema50} with RSI at {rsi}. Price is rolling over — sell pressure increasing.",
+                f"{pair_name} has failed to hold above the 1H EMA50 at {ema50} with RSI at {rsi}. Price is rolling over and sell pressure is increasing.",
                 f"Price is rejecting the 1H EMA50 at {ema50} from above with RSI at {rsi} turning lower. Bears are taking back control.",
-                f"A liquidity sweep above recent highs has been completed with RSI at {rsi} turning down. Classic sell-the-rally setup.",
-                f"{pair_name} is struggling to maintain levels above the EMA50 at {ema50} with RSI at {rsi} fading. Downside pressure building.",
-                f"Price has stalled at a key resistance zone with RSI at {rsi} declining. Risk-reward favours the sell from here.",
+                f"A liquidity sweep above recent highs has been completed with RSI at {rsi} turning down. Classic sell the rally setup.",
+                f"{pair_name} is struggling to maintain levels above the EMA50 at {ema50} with RSI at {rsi} fading. Downside pressure is building.",
+                f"Price has stalled at a key resistance zone with RSI at {rsi} declining. Risk reward favours the sell from here.",
             ]
     else:
-        # Fallback — varied general price action, no live data
         if pair == "XAUUSD":
             if direction == "BUY":
                 pool = [
                     "Price has bounced cleanly off a key support level with buyer interest confirmed. Entry looks favourable.",
                     "A liquidity sweep below recent lows has completed and price is now reversing higher. Smart money appears long.",
-                    "Bullish momentum is building from a key demand zone — risk is defined and reward potential looks strong.",
+                    "Bullish momentum is building from a key demand zone. Risk is defined and reward potential looks strong.",
                     "A strong rejection wick at support confirms buying interest at this level. The setup favours the upside.",
                     "Price has broken out of consolidation to the upside with a clean structure forming above. Targets are higher.",
-                    "A bullish order block has been respected at this level. The trade offers strong risk-reward to the upside.",
-                    "The London session is driving bullish momentum from a key structural level. Entry here looks well-timed.",
+                    "A bullish order block has been respected at this level. The trade offers strong risk reward to the upside.",
+                    "The London session is driving bullish momentum from a key structural level. Entry here looks well timed.",
                 ]
             else:
                 pool = [
                     "Price has rejected sharply from a key resistance area with sellers taking control. Downside targets in view.",
                     "A liquidity sweep above recent highs has completed and price is now reversing lower. Smart money appears short.",
-                    "Bearish momentum is building from a key supply zone — risk is defined and targets are to the downside.",
+                    "Bearish momentum is building from a key supply zone. Risk is defined and targets are to the downside.",
                     "A strong rejection wick at resistance confirms selling pressure at this level. The setup favours the downside.",
                     "Price has broken down from consolidation with a clean bearish structure forming. Targets are lower.",
-                    "A bearish order block has rejected price at this level. The trade offers strong risk-reward to the downside.",
-                    "The NY session is driving bearish momentum from a key structural resistance. Sell setup looks well-timed.",
+                    "A bearish order block has rejected price at this level. The trade offers strong risk reward to the downside.",
+                    "The NY session is driving bearish momentum from a key structural resistance. Sell setup looks well timed.",
                 ]
         else:
             if direction == "BUY":
@@ -531,6 +605,7 @@ def get_price_gold():
                     return p
     except Exception:
         pass
+
     try:
         r = requests.get("https://api.gold-api.com/price/XAU", timeout=6)
         if r.status_code == 200:
@@ -539,6 +614,7 @@ def get_price_gold():
                 return p
     except Exception:
         pass
+
     try:
         r = requests.get("https://api.metals.live/v1/spot/gold", timeout=6)
         if r.status_code == 200:
@@ -549,6 +625,7 @@ def get_price_gold():
                     return p
     except Exception:
         pass
+
     return None
 
 
@@ -561,6 +638,7 @@ def get_price_btc():
                 return p
     except Exception:
         pass
+
     try:
         r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", timeout=6)
         if r.status_code == 200:
@@ -569,6 +647,7 @@ def get_price_btc():
                 return p
     except Exception:
         pass
+
     try:
         r = requests.get("https://api.coinbase.com/v2/prices/BTC-USD/spot", timeout=6)
         if r.status_code == 200:
@@ -577,6 +656,7 @@ def get_price_btc():
                 return p
     except Exception:
         pass
+
     return None
 
 
@@ -584,7 +664,7 @@ def get_price(pair):
     return get_price_gold() if pair == "XAUUSD" else get_price_btc()
 
 
-# ─── TP / SL MESSAGES ────────────────────────────────────────────────────────
+# === TP AND SL MESSAGES ===
 TP_SL_SENT = {}
 tp_sl_lock = threading.Lock()
 
@@ -619,6 +699,7 @@ def send_tp_message(pair, tp_num, signal_ids):
             "💰 Full profits secured.\n\n"
             "👏 Well done team!"
         )
+
     send_message(text, reply_to_ids=signal_ids, keyboard=JOIN_BUTTON)
 
 
@@ -627,7 +708,7 @@ def send_sl_message(pair, signal_ids):
     send_message(text, reply_to_ids=signal_ids)
 
 
-# ─── PROFIT CARD IMAGE ───────────────────────────────────────────────────────
+# === PROFIT CARD IMAGE ===
 def get_gbpusd_rate():
     try:
         r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5)
@@ -637,6 +718,7 @@ def get_gbpusd_rate():
                 return rate
     except Exception:
         pass
+
     try:
         td_key = os.environ.get("TWELVE_DATA_KEY", "")
         if td_key:
@@ -647,13 +729,12 @@ def get_gbpusd_rate():
                     return rate
     except Exception:
         pass
-    return 0.79  # fallback
+
+    return 0.79
 
 
 def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
-    """Add profit band BELOW the chart — price action stays fully visible"""
     try:
-        # Fixed pips per TP level — Gold and Bitcoin
         if pair == "BTCUSD":
             pips_map = {"TP1": 100, "TP2": 100, "TP3": 100}
             profit_ranges = {"TP1": (75, 107), "TP2": (75, 107), "TP3": (75, 107)}
@@ -665,26 +746,23 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
         lo, hi = profit_ranges.get(close_type, (110, 165))
         profit_gbp = round(random.uniform(lo, hi), 2)
 
-        # Load chart image
         if chart_bytes:
             chart_img = Image.open(BytesIO(chart_bytes)).convert("RGB")
         else:
             chart_img = Image.new("RGB", (800, 400), (10, 10, 15))
+
         CW, CH = chart_img.size
 
-        # Create profit band (height = 22% of chart height)
         band_h = int(CH * 0.22)
         band = Image.new("RGB", (CW, band_h), (8, 8, 12))
         draw = ImageDraw.Draw(band)
 
-        # Gold top line
         draw.rectangle([0, 0, CW, 5], fill=(212, 175, 55))
-        # Gold bottom line
         draw.rectangle([0, band_h - 5, CW, band_h], fill=(212, 175, 55))
 
         font_profit = find_font(bold=True, size=int(band_h * 0.52))
-        font_label  = find_font(bold=True, size=int(band_h * 0.22))
-        font_small  = find_font(bold=True, size=int(band_h * 0.17))
+        font_label = find_font(bold=True, size=int(band_h * 0.22))
+        font_small = find_font(bold=True, size=int(band_h * 0.17))
 
         if pair == "BTCUSD":
             tp_labels = {"TP1": "ALL TARGETS HIT \u2705\u2705\u2705"}
@@ -694,29 +772,30 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
                 "TP2": "TP2 SMASHED \u2705\u2705",
                 "TP3": "ALL TARGETS HIT \u2705\u2705\u2705",
             }
-        tp_label   = tp_labels.get(close_type, close_type)
+
+        tp_label = tp_labels.get(close_type, close_type)
         profit_str = f"+\u00a3{profit_gbp:,.2f}"
         detail_str = f"0.71 Lots  |  + {pips} PIPS"
 
-        # TP label
         bbox = draw.textbbox((0, 0), tp_label, font=font_label)
         tw = bbox[2] - bbox[0]
         draw.text(((CW - tw) // 2, 8), tp_label, font=font_label, fill=(255, 255, 255))
 
-        # Big green profit
         bbox = draw.textbbox((0, 0), profit_str, font=font_profit)
         tw = bbox[2] - bbox[0]
         py = int(band_h * 0.28)
         draw.text(((CW - tw) // 2 + 3, py + 3), profit_str, font=font_profit, fill=(0, 60, 0))
         draw.text(((CW - tw) // 2, py), profit_str, font=font_profit, fill=(0, 230, 80))
 
-        # Lots | Pips
         bbox = draw.textbbox((0, 0), detail_str, font=font_small)
         tw = bbox[2] - bbox[0]
-        draw.text(((CW - tw) // 2, band_h - int(band_h * 0.22)), detail_str,
-                  font=font_small, fill=(212, 175, 55))
+        draw.text(
+            ((CW - tw) // 2, band_h - int(band_h * 0.22)),
+            detail_str,
+            font=font_small,
+            fill=(212, 175, 55)
+        )
 
-        # Stack: chart on top, profit band below
         combined = Image.new("RGB", (CW, CH + band_h))
         combined.paste(chart_img, (0, 0))
         combined.paste(band, (0, CH))
@@ -725,6 +804,7 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
         combined.save(buf, format="JPEG", quality=92)
         buf.seek(0)
         return buf.read()
+
     except Exception as e:
         logger.error(f"Profit overlay error: {e}")
         return chart_bytes
@@ -732,21 +812,31 @@ def generate_profit_overlay(pair, close_type, profit_usd, chart_bytes=None):
 
 def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
     try:
-        chart    = get_chart_image(pair)
+        chart = get_chart_image(pair)
         combined = generate_profit_overlay(pair, close_type, abs(profit_usd), chart)
-        channels = [c for c in [CHAT_ID, CHAT_ID_2, CHAT_ID_3] if c]
+        channels = get_channels()
         sent_image = None
+
         for ch in channels:
             reply_to = (signal_ids or {}).get(ch)
+
             if combined:
-                files   = {"photo": ("result.jpg", combined, "image/jpeg")}
+                files = {"photo": ("result.jpg", combined, "image/jpeg")}
                 payload = {"chat_id": ch, "caption": text, "parse_mode": "HTML"}
+
                 if reply_to:
                     payload["reply_to_message_id"] = reply_to
+
                 if keyboard:
                     payload["reply_markup"] = json.dumps(keyboard)
-                r = requests.post(f"{TELEGRAM_URL}/sendPhoto",
-                                  files=files, data=payload, timeout=15)
+
+                r = requests.post(
+                    f"{TELEGRAM_URL}/sendPhoto",
+                    files=files,
+                    data=payload,
+                    timeout=15
+                )
+
                 if r.json().get("ok"):
                     sent_image = combined
                 else:
@@ -755,23 +845,28 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
             else:
                 send_to_channel(ch, text, reply_to=reply_to, keyboard=keyboard)
 
-        # Forward profit card image to VIP bot for incomplete leads
         if sent_image:
             try:
                 vip_url = os.environ.get("VIP_BOT_URL", "")
+
                 if vip_url:
-                    # Extract profit string from the overlay for caption
                     if pair == "BTCUSD":
                         ranges = {"TP1": (75, 107)}
                     else:
                         ranges = {"TP1": (110, 165), "TP2": (170, 240), "TP3": (280, 420)}
+
                     lo, hi = ranges.get(close_type, (110, 165))
                     profit_gbp = round(random.uniform(lo, hi), 2)
                     profit_str = f"+£{profit_gbp:,.2f}"
+
                     requests.post(
                         f"{vip_url}/forward_tp",
                         files={"image": ("result.jpg", sent_image, "image/jpeg")},
-                        data={"close_type": close_type, "pair": pair, "profit_str": profit_str},
+                        data={
+                            "close_type": close_type,
+                            "pair": pair,
+                            "profit_str": profit_str
+                        },
                         timeout=10
                     )
             except Exception as e:
@@ -782,42 +877,44 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
         send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
 
 
-# ─── MT5 CLOSE ENDPOINT ──────────────────────────────────────────────────────
+# === MT5 CLOSE ENDPOINT ===
 mt5_close_recent = {}
-mt5_close_lock   = threading.Lock()
+mt5_close_lock = threading.Lock()
 
 
 @app.route("/mt5_close", methods=["POST"])
 def mt5_close():
     try:
-        data       = request.get_json(force=True)
-        pair       = data.get("pair", "XAUUSD")
+        data = request.get_json(force=True)
+        pair = data.get("pair", "XAUUSD")
         close_type = data.get("close_type", "")
-        price      = float(data.get("price", 0))
-        profit     = float(data.get("profit", 0))
+        price = float(data.get("price", 0))
+        profit = float(data.get("profit", 0))
 
         logger.info(f"MT5 close: {pair} {close_type} price={price} profit={profit}")
 
-        # BE close — silent, just clear state so next signal gets through
         if close_type == "BE":
-            logger.info(f"BE close received for {pair} — clearing state silently")
+            logger.info(f"BE close received for {pair}. Clearing state silently.")
             with state_lock:
                 active_trades[pair] = None
                 save_state(active_trades)
+
             with mt5_close_lock:
                 mt5_close_recent.clear()
+
             return jsonify({"status": "be_cleared"})
 
         if close_type not in ("TP1", "TP2", "TP3", "SL"):
             return jsonify({"status": "ignored"})
 
-        # 60-second dedup — blocks duplicate closes for same TP/SL level
         dedup_key = f"{pair}_{close_type}"
         now = time.time()
+
         with mt5_close_lock:
             if now - mt5_close_recent.get(dedup_key, 0) < 60:
                 logger.info(f"Duplicate {close_type} blocked for {pair}")
                 return jsonify({"status": "duplicate_ignored"})
+
             mt5_close_recent[dedup_key] = now
 
         if close_type == "TP1":
@@ -836,6 +933,7 @@ def mt5_close():
                     "👏 Well done team!"
                 )
             keyboard = JOIN_BUTTON
+
         elif close_type == "TP2":
             text = (
                 "<b>GOLD SMASHED TP2 ✅✅✅✅</b>\n\n"
@@ -844,6 +942,7 @@ def mt5_close():
                 "☑️ Let the remaining trade run risk free to TP3"
             )
             keyboard = JOIN_BUTTON
+
         elif close_type == "TP3":
             text = (
                 "<b>GOLD SMASHED TP3 ✅✅✅✅✅</b>\n\n"
@@ -852,31 +951,34 @@ def mt5_close():
                 "👏 Well done team!"
             )
             keyboard = JOIN_BUTTON
-        else:  # SL
+
+        else:
             text = "SL Triggered Team ❌\nLooking for the next Set-Up. Lets win on the Next one!"
             keyboard = None
 
         with state_lock:
             trade_state = active_trades.get(pair)
-            signal_ids  = trade_state.get("signal_msg_ids", {}) if trade_state else {}
+            signal_ids = trade_state.get("signal_msg_ids", {}) if trade_state else {}
+
             if close_type in ("SL", "TP3") or (pair == "BTCUSD" and close_type == "TP1"):
                 active_trades[pair] = None
                 save_state(active_trades)
 
-        # Send profit card image + text for TPs, plain text for SL
         if close_type in ("TP1", "TP2", "TP3") and profit != 0:
             send_profit_card(pair, close_type, profit, text, signal_ids, keyboard)
         else:
             send_message(text, reply_to_ids=signal_ids, keyboard=keyboard)
+
         return jsonify({"status": "ok"})
+
     except Exception as e:
         logger.error(f"mt5_close error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# ─── MT5 SIGNAL ENDPOINT ─────────────────────────────────────────────────────
+# === MT5 SIGNAL ENDPOINT ===
 mt5_pending_signal = {}
-mt5_signal_lock    = threading.Lock()
+mt5_signal_lock = threading.Lock()
 
 
 @app.route("/mt5_signal", methods=["GET"])
@@ -884,51 +986,60 @@ def mt5_signal():
     with mt5_signal_lock:
         if not mt5_pending_signal:
             return "none"
+
         signal = dict(mt5_pending_signal)
         mt5_pending_signal.clear()
+
     return jsonify(signal)
 
 
-# ─── WEBHOOK ─────────────────────────────────────────────────────────────────
+# === WEBHOOK ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data      = request.get_json(force=True)
-        event     = data.get("event")
-        pair      = data.get("pair", "XAUUSD")
+        data = request.get_json(force=True)
+        event = data.get("event")
+        pair = data.get("pair", "XAUUSD")
         direction = data.get("direction", "BUY").upper()
-        price     = float(str(data.get("price", "0")).replace(",", ""))
+        price = float(str(data.get("price", "0")).replace(",", ""))
+
         logger.info(f"Webhook: {event} | {pair} | {direction} | {price}")
 
         if event == "entry":
             now = time.time()
+
             with state_lock:
                 if active_trades.get(pair) is not None:
                     return jsonify({"status": "ignored", "reason": "trade active"})
+
                 last_entry = last_entry_time.get(pair, 0)
+
                 if now - last_entry < 60:
                     return jsonify({"status": "ignored", "reason": "duplicate within 60s"})
+
                 last_entry_time[pair] = now
 
             if pair == "XAUUSD":
                 if direction == "BUY":
-                    entry_low  = round(price - 1, 2)
+                    entry_low = round(price - 1, 2)
                     entry_high = round(price + 1, 2)
                     tp1 = round(price + 3, 2)
                     tp2 = round(price + 4, 2)
                     tp3 = round(price + 9, 2)
-                    sl  = round(price - 11, 2)
+                    sl = round(price - 11, 2)
                 else:
-                    entry_low  = round(price - 1, 2)
+                    entry_low = round(price - 1, 2)
                     entry_high = round(price + 1, 2)
                     tp1 = round(price - 3, 2)
                     tp2 = round(price - 4, 2)
                     tp3 = round(price - 9, 2)
-                    sl  = round(price + 11, 2)
+                    sl = round(price + 11, 2)
+
                 entry_mid = price
                 tp_levels = [tp1, tp2, tp3]
                 emoji = "🟢" if direction == "BUY" else "🔴"
                 analysis = get_analysis(pair, direction)
+
                 text = (
                     f"{emoji} <b>{direction}\n"
                     f"XAU/USD | GOLD</b>\n\n"
@@ -939,21 +1050,24 @@ def webhook():
                     f"🚫 SL {sl:.2f}\n\n"
                     f"💡 {analysis}"
                 )
+
             else:
                 if direction == "BUY":
-                    entry_low  = int(price - 150)
+                    entry_low = int(price - 150)
                     entry_high = int(price)
                     tp1 = int(price + 100)
-                    sl  = int(price - 1000)
+                    sl = int(price - 1000)
                 else:
-                    entry_low  = int(price)
+                    entry_low = int(price)
                     entry_high = int(price + 150)
                     tp1 = int(price - 100)
-                    sl  = int(price + 1000)
+                    sl = int(price + 1000)
+
                 entry_mid = price
                 tp_levels = [tp1]
                 emoji = "🟢" if direction == "BUY" else "🔴"
                 analysis = get_analysis(pair, direction)
+
                 text = (
                     f"{emoji} <b>{direction}\n"
                     f"BTC/USD | BITCOIN</b>\n\n"
@@ -968,71 +1082,91 @@ def webhook():
             with mt5_signal_lock:
                 mt5_pending_signal.clear()
                 mt5_pending_signal.update({
-                    "id":        f"{pair}_{int(time.time())}",
-                    "pair":      pair,
+                    "id": f"{pair}_{int(time.time())}",
+                    "pair": pair,
                     "direction": direction,
                     "entry_mid": entry_mid,
-                    "sl":        sl,
-                    "tp1":       tp_levels[0] if len(tp_levels) > 0 else 0,
-                    "tp2":       tp_levels[1] if len(tp_levels) > 1 else 0,
-                    "tp3":       tp_levels[2] if len(tp_levels) > 2 else 0,
+                    "sl": sl,
+                    "tp1": tp_levels[0] if len(tp_levels) > 0 else 0,
+                    "tp2": tp_levels[1] if len(tp_levels) > 1 else 0,
+                    "tp3": tp_levels[2] if len(tp_levels) > 2 else 0,
                 })
 
             with state_lock:
                 active_trades[pair] = {
-                    "direction":      direction,
-                    "entry_mid":      entry_mid,
-                    "tp_levels":      tp_levels,
-                    "sl":             sl,
-                    "be":             None,
-                    "tp_hit_count":   0,
+                    "direction": direction,
+                    "entry_mid": entry_mid,
+                    "tp_levels": tp_levels,
+                    "sl": sl,
+                    "be": None,
+                    "tp_hit_count": 0,
                     "signal_msg_ids": signal_ids
                 }
                 save_state(active_trades)
+
             return jsonify({"status": "ok", "signal_msg_ids": signal_ids})
 
         return jsonify({"status": "ok"})
+
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# ─── TELEGRAM UPDATES ────────────────────────────────────────────────────────
+# === TELEGRAM UPDATES ===
 @app.route("/telegram_update", methods=["POST"])
 def telegram_update():
     try:
-        update  = request.get_json(force=True)
+        update = request.get_json(force=True)
         message = update.get("message", {})
+
         if not message:
             return jsonify({"ok": True})
-        user     = message.get("from", {})
-        text     = message.get("text", "")
-        name     = user.get("first_name", "Unknown")
+
+        user = message.get("from", {})
+        text = message.get("text", "")
+        name = user.get("first_name", "Unknown")
         username = user.get("username", "no username")
-        notify_owner(f"📩 New PM:\nName: {name}\nUsername: @{username}\nMessage: {text}")
+
+        notify_owner(
+            f"📩 New PM:\n"
+            f"Name: {name}\n"
+            f"Username: @{username}\n"
+            f"Message: {text}"
+        )
+
     except Exception as e:
         logger.error(f"Telegram update error: {e}")
+
     return jsonify({"ok": True})
 
 
-# ─── HEALTH & ADMIN ──────────────────────────────────────────────────────────
+# === HEALTH AND ADMIN ===
 @app.route("/reset", methods=["GET"])
 def reset():
     with state_lock:
         active_trades["XAUUSD"] = None
         active_trades["BTCUSD"] = None
         save_state(active_trades)
+
     with mt5_close_lock:
         mt5_close_recent.clear()
+
     return "All trades cleared! ✅ Bot ready for new signals."
 
 
 @app.route("/test_quote", methods=["GET"])
 def test_quote():
-    missing = [f for f in QUOTE_BG_FILES if not os.path.exists(os.path.join(QUOTE_BG_DIR, f))]
+    missing = [
+        f for f in QUOTE_BG_FILES
+        if not os.path.exists(os.path.join(QUOTE_BG_DIR, f))
+    ]
+
     send_daily_quote()
+
     if missing:
         return f"Test quote sent, but missing: {missing}"
+
     return "Test quote sent! ✅"
 
 
@@ -1040,13 +1174,20 @@ def test_quote():
 def health():
     with state_lock:
         gold = active_trades.get("XAUUSD")
-        btc  = active_trades.get("BTCUSD")
+        btc = active_trades.get("BTCUSD")
+
     ch2_info = f" | Channel 2: {CHAT_ID_2}" if CHAT_ID_2 else " | Channel 2: not set"
     ch3_info = f" | Channel 3: {CHAT_ID_3}" if CHAT_ID_3 else " | Channel 3: not set"
-    bg_found = sum(1 for f in QUOTE_BG_FILES if os.path.exists(os.path.join(QUOTE_BG_DIR, f)))
+    ch4_info = f" | Channel 4: {CHAT_ID_4}" if CHAT_ID_4 else " | Channel 4: not set"
+
+    bg_found = sum(
+        1 for f in QUOTE_BG_FILES
+        if os.path.exists(os.path.join(QUOTE_BG_DIR, f))
+    )
+
     return (
         f"Kevin Gold Signals Bot is running! ✅\n"
-        f"Channel 1: {CHAT_ID}{ch2_info}{ch3_info}\n"
+        f"Channel 1: {CHAT_ID}{ch2_info}{ch3_info}{ch4_info}\n"
         f"Gold trade active: {'Yes' if gold else 'No'}\n"
         f"Bitcoin trade active: {'Yes' if btc else 'No'}\n"
         f"MT5 EA handles: TP1, TP2, TP3, SL\n"
@@ -1055,7 +1196,7 @@ def health():
     )
 
 
-# ─── MAIN ────────────────────────────────────────────────────────────────────
+# === MAIN ===
 if __name__ == "__main__":
     threading.Thread(target=quote_scheduler, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
