@@ -21,6 +21,7 @@ CHAT_ID_2 = os.environ.get("CHAT_ID_2", "")
 CHAT_ID_3 = os.environ.get("CHAT_ID_3", "")
 CHAT_ID_4 = os.environ.get("CHAT_ID_4", "")
 OWNER_ID = os.environ.get("OWNER_ID", "8842842151")
+VIP_BOT_URL = os.environ.get("VIP_BOT_URL", "")
 
 STATE_FILES = [
     "/data/trade_state.json",
@@ -352,6 +353,22 @@ def send_signal_with_chart(text, pair):
             msg_ids[ch] = mid
 
     return msg_ids
+
+
+# === FORWARD ENTRY SIGNAL TO VIP LEADS ===
+def forward_entry_to_vip_leads(signal_text, pair):
+    """Forward the entry signal text to all pending VIP leads"""
+    if not VIP_BOT_URL:
+        return
+    try:
+        requests.post(
+            f"{VIP_BOT_URL}/forward_signal",
+            data={"signal_text": signal_text, "pair": pair},
+            timeout=10
+        )
+        logger.info(f"Entry signal forwarded to VIP leads for {pair}")
+    except Exception as e:
+        logger.error(f"VIP entry forward error: {e}")
 
 
 # === STATE ===
@@ -847,9 +864,7 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
 
         if sent_image:
             try:
-                vip_url = os.environ.get("VIP_BOT_URL", "")
-
-                if vip_url:
+                if VIP_BOT_URL:
                     if pair == "BTCUSD":
                         ranges = {"TP1": (75, 107)}
                     else:
@@ -860,7 +875,7 @@ def send_profit_card(pair, close_type, profit_usd, text, signal_ids, keyboard):
                     profit_str = f"+£{profit_gbp:,.2f}"
 
                     requests.post(
-                        f"{vip_url}/forward_tp",
+                        f"{VIP_BOT_URL}/forward_tp",
                         files={"image": ("result.jpg", sent_image, "image/jpeg")},
                         data={
                             "close_type": close_type,
@@ -1078,6 +1093,13 @@ def webhook():
                 )
 
             signal_ids = send_signal_with_chart(text, pair)
+
+            # ── Forward entry signal to VIP pending leads ──
+            threading.Thread(
+                target=forward_entry_to_vip_leads,
+                args=(text, pair),
+                daemon=True
+            ).start()
 
             with mt5_signal_lock:
                 mt5_pending_signal.clear()
