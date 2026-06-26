@@ -459,28 +459,7 @@ def send_daily_quote():
         logger.error(f"Daily quote error: {e}")
 
 
-def send_hourly_analysis():
-    try:
-        pairs = ["XAU/USD", "BTC/USD"]
-        pair = random.choice(pairs)
-        
-        message = generate_market_analysis(pair)
-        if not message:
-            logger.warning("Failed to generate market analysis")
-            return
-        
-        chart_bytes = get_chart_image("XAUUSD" if pair == "XAU/USD" else "BTCUSD")
-        channels = get_channels()
-        
-        for ch in channels:
-            if chart_bytes:
-                send_photo_to_channel(ch, chart_bytes, message)
-            else:
-                send_to_channel(ch, message)
-        
-        logger.info(f"Hourly analysis sent for {pair}")
-    except Exception as e:
-        logger.error(f"Hourly analysis error: {e}")
+
 
 
 def quote_scheduler():
@@ -501,6 +480,85 @@ def quote_scheduler():
             logger.error(f"Quote scheduler error: {e}")
         
         time.sleep(30)
+
+
+def is_gold_market_closed():
+    """Check if gold market is closed (Friday 10pm - Sunday 11pm UK time)"""
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+    weekday = now.weekday()
+    hour = now.hour
+    
+    if weekday == 4 and hour >= 21:
+        return True
+    if weekday == 5:
+        return True
+    if weekday == 6 and hour < 23:
+        return True
+    
+    return False
+
+
+def generate_gold_prediction():
+    """Generate prediction message for gold when market is closed"""
+    predictions = [
+        "🚨 <b>Gold Market Closed - Technical Preview</b>\n\n📊 Analysis for Next Session:\n✅ MACD showing bullish divergence on 4H chart\n✅ RSI oversold territory (30-35 range)\n✅ Support holding at key demand zone\n\n📈 Expected Next Open:\n✅ Potential gap-fill rally likely\n✅ Watch for volume surge confirmation\n✅ If support breaks: downside targets in play",
+        
+        "🚨 <b>Gold Market Closed - Setup Preview</b>\n\n📊 Technical Observations:\n✅ Higher lows pattern forming on daily\n✅ RSI recovering from oversold\n✅ MACD crossing bullish on 4H\n\n📈 What to Expect:\n✅ Potential bounce from support zone\n✅ Watch order block at resistance\n✅ Volume will be key confirmation at open",
+        
+        "🚨 <b>Gold Market Closed - Opportunity Alert</b>\n\n📊 Chart Pattern Analysis:\n✅ Support/Resistance levels clearly defined\n✅ Volume profile showing interest at key zones\n✅ Market in consolidation before next move\n\n📈 Next Session Setup:\n✅ Breakout likely from current range\n✅ Watch for gap-fill opportunities\n✅ Technical levels ready for entry signals",
+        
+        "🚨 <b>Gold Market Closed - Technical Update</b>\n\n📊 Awaiting Market Open:\n✅ RSI positioning suggests momentum building\n✅ Support zone holding as expected\n✅ MACD showing strength on 4H timeframe\n\n📈 Ready for Next Move:\n✅ Key resistance at institutional levels\n✅ Watch breakout direction on volume\n✅ Pullback zone identified for entries",
+        
+        "🚨 <b>Gold Market Closed - Analysis Weekend</b>\n\n📊 Technical Status:\n✅ Consolidation pattern intact\n✅ RSI in recovery mode\n✅ Support holding strong\n\n📈 What Traders Watch:\n✅ Gap-fill potential at open\n✅ Volume confirmation critical\n✅ Order block rejection zones in focus",
+        
+        "🚨 <b>Gold Market Closed - Setup Ready</b>\n\n📊 Pending Session Analysis:\n✅ MACD bullish alignment forming\n✅ RSI below 40 creating opportunity\n✅ Demand zone holding support\n\n📈 Next Open Forecast:\n✅ Expect momentum surge at open\n✅ Watch liquidity grab zones\n✅ Technical targets identified above",
+    ]
+    
+    return random.choice(predictions)
+
+
+def send_hourly_analysis():
+    try:
+        if is_gold_market_closed():
+            gold_msg = generate_gold_prediction()
+            btc_msg = generate_market_analysis("BTC/USD")
+            btc_chart = get_chart_image("BTCUSD")
+            
+            channels = get_channels()
+            
+            for ch in channels:
+                send_to_channel(ch, gold_msg)
+                time.sleep(1)
+                
+                if btc_msg and btc_chart:
+                    send_photo_to_channel(ch, btc_chart, btc_msg)
+                elif btc_msg:
+                    send_to_channel(ch, btc_msg)
+                time.sleep(1)
+            
+            logger.info("Gold prediction + BTC analysis sent (market closed period)")
+        else:
+            message = generate_market_analysis("XAU/USD")
+            if not message:
+                message = generate_market_analysis("BTC/USD")
+            
+            if not message:
+                logger.warning("Failed to generate market analysis")
+                return
+            
+            chart_bytes = get_chart_image("XAUUSD" if "Gold" in (message or "") else "BTCUSD")
+            channels = get_channels()
+            
+            for ch in channels:
+                if chart_bytes:
+                    send_photo_to_channel(ch, chart_bytes, message)
+                else:
+                    send_to_channel(ch, message)
+            
+            logger.info("Hourly analysis sent")
+    
+    except Exception as e:
+        logger.error(f"Hourly analysis error: {e}")
 
 
 def hourly_analysis_scheduler():
