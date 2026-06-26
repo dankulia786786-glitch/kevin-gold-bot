@@ -176,15 +176,15 @@ def generate_market_analysis(symbol):
     
     if should_mention_support(price, support, resistance):
         messages = [
-            f"🚨 Trade Alert Everyone\n✅ {asset_name} is trading near {price_str} on 15m ➡️ Support holding at {support_str} — that's your key level\n✅ Watch how {asset_name} reacts here. If it holds, upside could continue.",
-            f"🚨 Trade Alert Everyone\n✅ {asset_name} sitting at {price_str} on 15m ➡️ Support at {support_str} is the floor\n✅ A close below that level changes the picture. Stay alert to that break.",
-            f"🚨 Trade Alert Everyone\n✅ Price is {price_str} on 15m ➡️ Support around {support_str} is holding the line\n✅ If support breaks, downside targets come into play.",
+            f"🚨 <b>Trade Alert Everyone</b>\n\n✅ {asset_name} is trading near {price_str} on 15m ➡️ Support holding at {support_str} — that's your key level\n\n✅ Watch how {asset_name} reacts here. If it holds, upside could continue.",
+            f"🚨 <b>Trade Alert Everyone</b>\n\n✅ {asset_name} sitting at {price_str} on 15m ➡️ Support at {support_str} is the floor\n\n✅ A close below that level changes the picture. Stay alert to that break.",
+            f"🚨 <b>Trade Alert Everyone</b>\n\n✅ Price is {price_str} on 15m ➡️ Support around {support_str} is holding the line\n\n✅ If support breaks, downside targets come into play.",
         ]
     else:
         messages = [
-            f"🚨 Trade Alert Everyone\n✅ {asset_name} is trading near {price_str} on 15m ➡️ Resistance at {resistance_str} is the hurdle\n✅ Buyers need to push through there. If they do, it's significant.",
-            f"🚨 Trade Alert Everyone\n✅ {asset_name} at {price_str} on 15m ➡️ Resistance at {resistance_str} is the key level\n✅ Watch if it breaks or bounces. That tells us the next move.",
-            f"🚨 Trade Alert Everyone\n✅ Currently {price_str} on 15m ➡️ {asset_name} facing resistance at {resistance_str}\n✅ If buyers break through, upside is in play.",
+            f"🚨 <b>Trade Alert Everyone</b>\n\n✅ {asset_name} is trading near {price_str} on 15m ➡️ Resistance at {resistance_str} is the hurdle\n\n✅ Buyers need to push through there. If they do, it's significant.",
+            f"🚨 <b>Trade Alert Everyone</b>\n\n✅ {asset_name} at {price_str} on 15m ➡️ Resistance at {resistance_str} is the key level\n\n✅ Watch if it breaks or bounces. That tells us the next move.",
+            f"🚨 <b>Trade Alert Everyone</b>\n\n✅ Currently {price_str} on 15m ➡️ {asset_name} facing resistance at {resistance_str}\n\n✅ If buyers break through, upside is in play.",
         ]
     
     return random.choice(messages)
