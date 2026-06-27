@@ -517,63 +517,78 @@ def generate_gold_prediction():
     return random.choice(predictions)
 
 
-def send_hourly_analysis():
-    try:
-        if is_gold_market_closed():
-            gold_msg = generate_gold_prediction()
-            btc_msg = generate_market_analysis("BTC/USD")
-            btc_chart = get_chart_image("BTCUSD")
-            
-            channels = get_channels()
-            
-            for ch in channels:
-                send_to_channel(ch, gold_msg)
-                time.sleep(1)
-                
-                if btc_msg and btc_chart:
-                    send_photo_to_channel(ch, btc_chart, btc_msg)
-                elif btc_msg:
-                    send_to_channel(ch, btc_msg)
-                time.sleep(1)
-            
-            logger.info("Gold prediction + BTC analysis sent (market closed period)")
-        else:
-            message = generate_market_analysis("XAU/USD")
-            if not message:
-                message = generate_market_analysis("BTC/USD")
-            
-            if not message:
-                logger.warning("Failed to generate market analysis")
-                return
-            
-            chart_bytes = get_chart_image("XAUUSD" if "Gold" in (message or "") else "BTCUSD")
-            channels = get_channels()
-            
-            for ch in channels:
-                if chart_bytes:
-                    send_photo_to_channel(ch, chart_bytes, message)
-                else:
-                    send_to_channel(ch, message)
-            
-            logger.info("Hourly analysis sent")
-    
-    except Exception as e:
-        logger.error(f"Hourly analysis error: {e}")
+
+analysis_last_sent = {"timestamp": 0, "next_asset": "XAUUSD"}
 
 
 def hourly_analysis_scheduler():
-    logger.info("Hourly analysis scheduler started")
+    global analysis_last_sent
+    logger.info("Analysis scheduler started - Every 6 hours, alternating Gold/Bitcoin")
+    
     while True:
         try:
-            now = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            now = time.time()
             
-            if now.minute == 0:
-                send_hourly_analysis()
+            if now - analysis_last_sent["timestamp"] >= 21600:
+                send_alternating_analysis()
+                analysis_last_sent["timestamp"] = now
                 time.sleep(60)
+        
         except Exception as e:
-            logger.error(f"Hourly analysis scheduler error: {e}")
+            logger.error(f"Analysis scheduler error: {e}")
         
         time.sleep(30)
+
+
+def send_alternating_analysis():
+    global analysis_last_sent
+    
+    try:
+        next_asset = analysis_last_sent.get("next_asset", "XAUUSD")
+        
+        if is_gold_market_closed() and next_asset == "XAUUSD":
+            message = generate_gold_prediction()
+            channels = get_channels()
+            
+            for ch in channels:
+                send_to_channel(ch, message)
+                time.sleep(1)
+            
+            logger.info("Gold prediction sent (market closed)")
+            analysis_last_sent["next_asset"] = "BTCUSD"
+        
+        elif next_asset == "XAUUSD":
+            message = generate_market_analysis("XAU/USD")
+            chart = get_chart_image("XAUUSD")
+            channels = get_channels()
+            
+            for ch in channels:
+                if chart:
+                    send_photo_to_channel(ch, chart, message)
+                else:
+                    send_to_channel(ch, message)
+                time.sleep(1)
+            
+            logger.info("Gold analysis sent")
+            analysis_last_sent["next_asset"] = "BTCUSD"
+        
+        else:
+            message = generate_market_analysis("BTC/USD")
+            chart = get_chart_image("BTCUSD")
+            channels = get_channels()
+            
+            for ch in channels:
+                if chart:
+                    send_photo_to_channel(ch, chart, message)
+                else:
+                    send_to_channel(ch, message)
+                time.sleep(1)
+            
+            logger.info("Bitcoin analysis sent")
+            analysis_last_sent["next_asset"] = "XAUUSD"
+    
+    except Exception as e:
+        logger.error(f"Alternating analysis error: {e}")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1422,8 +1437,21 @@ def test_quote():
 
 @app.route("/test_analysis", methods=["GET"])
 def test_analysis():
-    send_hourly_analysis()
-    return "Hourly analysis sent! ✅"
+    send_alternating_analysis()
+    return "Analysis sent! ✅ (Next will be the opposite asset)"
+
+
+@app.route("/stop_bot", methods=["GET"])
+def stop_bot():
+    logger.info("⛔ STOP SIGNAL RECEIVED - Bot shutting down")
+    notify_owner("⛔ Bot manually stopped")
+    
+    def shutdown():
+        import sys
+        sys.exit(0)
+    
+    threading.Thread(target=shutdown, daemon=True).start()
+    return "Bot stopping... ⛔"
 
 
 @app.route("/", methods=["GET"])
@@ -1449,7 +1477,7 @@ def health():
         f"MT5 EA handles: TP1, TP2, TP3, SL\n"
         f"State backups: 3 files\n"
         f"Quote backgrounds found: {bg_found}/10\n"
-        f"📊 Hourly market analysis: ENABLED (every hour at :00)"
+        f"📊 Market analysis: EVERY 6 HOURS (alternating Gold/Bitcoin only, not both)"
     )
 
 
