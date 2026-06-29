@@ -540,6 +540,45 @@ def hourly_analysis_scheduler():
         time.sleep(30)
 
 
+def check_and_expire_stale_trades():
+    """Auto-expire trades after 4 hours if no close signal received"""
+    try:
+        now = time.time()
+        four_hours = 14400
+        
+        with state_lock:
+            for pair in ["XAUUSD", "BTCUSD"]:
+                trade = active_trades.get(pair)
+                
+                if trade and isinstance(trade, dict):
+                    entry_time = trade.get("entry_timestamp", now)
+                    elapsed = now - entry_time
+                    
+                    if elapsed >= four_hours:
+                        logger.warning(
+                            f"⏱️ {pair} trade auto-expired after {elapsed/3600:.1f} hours "
+                            f"(no close signal received). Clearing state."
+                        )
+                        active_trades[pair] = None
+                        save_state(active_trades)
+    
+    except Exception as e:
+        logger.error(f"Trade expiry check error: {e}")
+
+
+def auto_expire_scheduler():
+    """Check every 5 minutes for stale trades"""
+    logger.info("Auto-expire scheduler started - checks every 5 minutes")
+    
+    while True:
+        try:
+            check_and_expire_stale_trades()
+            time.sleep(300)
+        except Exception as e:
+            logger.error(f"Auto-expire scheduler error: {e}")
+            time.sleep(60)
+
+
 def send_alternating_analysis():
     global analysis_last_sent
     
@@ -1344,7 +1383,7 @@ def webhook():
                     f"💡 {analysis}"
                 )
             
-            signal_ids = send_signal_with_chart(text, pair)
+            signal_ids = {}
             
             with mt5_signal_lock:
                 mt5_pending_signal.clear()
@@ -1367,10 +1406,12 @@ def webhook():
                     "sl": sl,
                     "be": None,
                     "tp_hit_count": 0,
-                    "signal_msg_ids": signal_ids
+                    "signal_msg_ids": signal_ids,
+                    "entry_timestamp": time.time()
                 }
                 save_state(active_trades)
             
+            logger.info(f"Entry signal received (no Telegram notification) - {pair} {direction}")
             return jsonify({"status": "ok", "signal_msg_ids": signal_ids})
         
         return jsonify({"status": "ok"})
@@ -1484,5 +1525,6 @@ def health():
 if __name__ == "__main__":
     threading.Thread(target=quote_scheduler, daemon=True).start()
     threading.Thread(target=hourly_analysis_scheduler, daemon=True).start()
+    threading.Thread(target=auto_expire_scheduler, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
