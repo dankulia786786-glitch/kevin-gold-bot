@@ -1383,7 +1383,7 @@ def webhook():
                     f"💡 {analysis}"
                 )
             
-            signal_ids = {}
+            signal_ids = send_signal_with_chart(text, pair)
             
             with mt5_signal_lock:
                 mt5_pending_signal.clear()
@@ -1524,7 +1524,7 @@ def health():
 
 if __name__ == "__main__":
     threading.Thread(target=quote_scheduler, daemon=True).start()
-    threading.Thread(target=hourly_analysis_scheduler, daemon=True).start()
+    # threading.Thread(target=hourly_analysis_scheduler, daemon=True).start()  # DISABLED
     threading.Thread(target=auto_expire_scheduler, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
